@@ -31,6 +31,7 @@ export function SchoolsManager({ initialSchools, initialError = null }: Props) {
   const [schools, setSchools] = useState<School[]>(initialSchools);
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(initialError);
   const [success, setSuccess] = useState<string | null>(null);
@@ -38,11 +39,12 @@ export function SchoolsManager({ initialSchools, initialError = null }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
 
-  const filtered = schools.filter(
-    (s) =>
-      s.school_name.toLowerCase().includes(search.toLowerCase()) ||
-      s.emis_code.toLowerCase().includes(search.toLowerCase())
-  );
+  const query = search.trim().toLowerCase();
+  const filtered = query
+    ? schools.filter(
+        (s) => s.school_name.toLowerCase().includes(query) || s.emis_code.toLowerCase().includes(query)
+      )
+    : schools;
 
   async function handleRefresh() {
     setRefreshing(true);
@@ -70,12 +72,18 @@ export function SchoolsManager({ initialSchools, initialError = null }: Props) {
     });
     setError(null);
     setSuccess(null);
+    setShowForm(true);
   }
 
   function resetForm() {
     setEditingId(null);
     setForm(emptyForm);
     setErrors({});
+  }
+
+  function handleCancelForm() {
+    resetForm();
+    setShowForm(false);
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -109,6 +117,7 @@ export function SchoolsManager({ initialSchools, initialError = null }: Props) {
         setSuccess("School added successfully.");
       }
       resetForm();
+      setShowForm(false);
     } catch (err) {
       const code = (err as { code?: string })?.code;
       const message = (err as { message?: string })?.message;
@@ -132,80 +141,40 @@ export function SchoolsManager({ initialSchools, initialError = null }: Props) {
 
   return (
     <div className="space-y-6">
-      <Card>
-        <p className="mb-3 text-sm font-bold text-brand-900">
-          {editingId ? "Edit School" : "Add New School"}
-        </p>
-        {error && <div className="mb-3"><Alert type="error">{error}</Alert></div>}
-        {success && <div className="mb-3"><Alert type="success">{success}</Alert></div>}
-        <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Input
-            label="School Name"
-            value={form.school_name}
-            onChange={(e) => setForm((f) => ({ ...f, school_name: e.target.value }))}
-            error={errors.school_name}
-          />
-          <Input
-            label="EMIS Code"
-            value={form.emis_code}
-            onChange={(e) => setForm((f) => ({ ...f, emis_code: e.target.value }))}
-            error={errors.emis_code}
-          />
-          <Input
-            label="District"
-            value={form.district}
-            onChange={(e) => setForm((f) => ({ ...f, district: e.target.value }))}
-            error={errors.district}
-          />
-          <Input
-            label="Tehsil"
-            value={form.tehsil}
-            onChange={(e) => setForm((f) => ({ ...f, tehsil: e.target.value }))}
-            error={errors.tehsil}
-          />
-          <Input
-            label="Circle (optional)"
-            value={form.circle}
-            onChange={(e) => setForm((f) => ({ ...f, circle: e.target.value }))}
-          />
-          <Select
-            label="Status"
-            value={form.status}
-            onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as "active" | "inactive" }))}
-          >
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </Select>
+      {error && <Alert type="error">{error}</Alert>}
+      {success && <Alert type="success">{success}</Alert>}
 
-          <div className="flex gap-3 sm:col-span-2">
-            <Button type="submit" loading={saving}>
-              {editingId ? "Save Changes" : "Add School"}
-            </Button>
-            {editingId && (
-              <Button type="button" variant="outline" onClick={resetForm}>
-                Cancel
-              </Button>
-            )}
-          </div>
-        </form>
-      </Card>
-
+      {/* Search + stats — shown first so admins search before accidentally re-adding an existing school */}
       <Card>
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm font-bold text-brand-900">Total Schools: {schools.length}</p>
-          <div className="flex flex-1 items-center justify-end gap-2">
-            <Input
-              placeholder="Search by name or EMIS code"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="max-w-xs py-2"
-            />
-            <Button type="button" variant="outline" onClick={handleRefresh} loading={refreshing} className="px-3 py-2 text-sm">
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-bold text-brand-900">Total Schools: {schools.length}</p>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleRefresh}
+              loading={refreshing}
+              className="px-3 py-2 text-sm"
+            >
               ↻ Refresh
             </Button>
           </div>
+          <Input
+            placeholder="Search by School Name or EMIS Code..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="text-base"
+          />
+          {query && (
+            <p className="text-xs text-gray-500">
+              {filtered.length} school{filtered.length === 1 ? "" : "s"} matching &ldquo;{search.trim()}&rdquo;
+            </p>
+          )}
         </div>
+      </Card>
 
+      {/* School list */}
+      <Card>
         {refreshing ? (
           <Spinner label="Refreshing schools..." />
         ) : filtered.length === 0 ? (
@@ -213,7 +182,7 @@ export function SchoolsManager({ initialSchools, initialError = null }: Props) {
             <EmptyState
               icon="🏫"
               title="No schools found"
-              description="Add your first school using the form above, or press Refresh if you expected data here."
+              description="Add your first school using the form below, or press Refresh if you expected data here."
             />
           ) : (
             <EmptyState icon="🔍" title="No schools match your search" />
@@ -262,6 +231,76 @@ export function SchoolsManager({ initialSchools, initialError = null }: Props) {
               </tbody>
             </table>
           </div>
+        )}
+      </Card>
+
+      {/* Add / Edit School — collapsed by default so search & list are prioritized on mobile */}
+      <Card>
+        {!showForm ? (
+          <Button type="button" variant="secondary" fullWidth onClick={() => setShowForm(true)}>
+            + Add New School
+          </Button>
+        ) : (
+          <>
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-sm font-bold text-brand-900">{editingId ? "Edit School" : "Add New School"}</p>
+              <button
+                type="button"
+                onClick={handleCancelForm}
+                className="text-xs font-semibold text-gray-500 hover:text-brand-700"
+              >
+                ✕ Close
+              </button>
+            </div>
+            <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Input
+                label="School Name"
+                value={form.school_name}
+                onChange={(e) => setForm((f) => ({ ...f, school_name: e.target.value }))}
+                error={errors.school_name}
+              />
+              <Input
+                label="EMIS Code"
+                value={form.emis_code}
+                onChange={(e) => setForm((f) => ({ ...f, emis_code: e.target.value }))}
+                error={errors.emis_code}
+              />
+              <Input
+                label="District"
+                value={form.district}
+                onChange={(e) => setForm((f) => ({ ...f, district: e.target.value }))}
+                error={errors.district}
+              />
+              <Input
+                label="Tehsil"
+                value={form.tehsil}
+                onChange={(e) => setForm((f) => ({ ...f, tehsil: e.target.value }))}
+                error={errors.tehsil}
+              />
+              <Input
+                label="Circle (optional)"
+                value={form.circle}
+                onChange={(e) => setForm((f) => ({ ...f, circle: e.target.value }))}
+              />
+              <Select
+                label="Status"
+                value={form.status}
+                onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as "active" | "inactive" }))}
+              >
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </Select>
+
+              <div className="flex gap-3 sm:col-span-2">
+                <Button type="submit" loading={saving}>
+                  {editingId ? "Save Changes" : "Add School"}
+                </Button>
+                <Button type="button" variant="outline" onClick={handleCancelForm}>
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </>
         )}
       </Card>
     </div>
