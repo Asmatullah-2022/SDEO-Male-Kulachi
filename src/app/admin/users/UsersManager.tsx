@@ -13,11 +13,17 @@ import { EmptyState } from "@/components/EmptyState";
 
 const emptyForm = { full_name: "", email: "", mobile_number: "", password: "", school_id: "" };
 
-export function UsersManager({ initialUsers, schools }: { initialUsers: Profile[]; schools: School[] }) {
+interface Props {
+  initialUsers: Profile[];
+  schools: School[];
+  schoolsError?: string | null;
+}
+
+export function UsersManager({ initialUsers, schools, schoolsError = null }: Props) {
   const [users, setUsers] = useState<Profile[]>(initialUsers);
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(schoolsError);
   const [success, setSuccess] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [reassigning, setReassigning] = useState<string | null>(null);
@@ -126,7 +132,7 @@ export function UsersManager({ initialUsers, schools }: { initialUsers: Profile[
             <option value="">Select a school</option>
             {availableSchools.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.school_name} ({s.emis_code})
+                {s.school_name} - {s.emis_code}
               </option>
             ))}
           </Select>

@@ -1,12 +1,14 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { getSchoolCount, getSchools } from "@/lib/services/schools";
 import { todayISO } from "@/lib/date";
 import { Header } from "@/components/Header";
 import { AdminNav } from "@/components/AdminNav";
 import { StatCard } from "@/components/StatCard";
 import { Card } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
+import { Alert } from "@/components/Alert";
 import { EnrollmentTrendChart } from "./EnrollmentTrendChart";
 import type { School } from "@/lib/types";
 
@@ -18,8 +20,16 @@ export default async function AdminOverviewPage() {
   const supabase = await createClient();
   const today = todayISO();
 
-  const [{ data: schools }, { data: todaysReports }, { data: trendRows }] = await Promise.all([
-    supabase.from("schools").select("*").order("school_name"),
+  let totalSchoolCount = 0;
+  let allSchools: School[] = [];
+  let schoolsError: string | null = null;
+  try {
+    [totalSchoolCount, allSchools] = await Promise.all([getSchoolCount(supabase), getSchools(supabase)]);
+  } catch {
+    schoolsError = "Could not connect to the schools database. Please refresh the page or try again shortly.";
+  }
+
+  const [{ data: todaysReports }, { data: trendRows }] = await Promise.all([
     supabase.from("daily_enrollment").select("*").eq("report_date", today),
     supabase
       .from("daily_enrollment")
@@ -28,7 +38,6 @@ export default async function AdminOverviewPage() {
       .limit(500),
   ]);
 
-  const allSchools: School[] = schools ?? [];
   const activeSchools = allSchools.filter((s) => s.status === "active");
   const submittedSchoolIds = new Set((todaysReports ?? []).map((r) => r.school_id));
   const pendingSchools = activeSchools.filter((s) => !submittedSchoolIds.has(s.id));
@@ -73,8 +82,10 @@ export default async function AdminOverviewPage() {
       <AdminNav />
 
       <div className="mx-auto w-full max-w-5xl flex-1 space-y-6 px-4 py-6">
+        {schoolsError && <Alert type="error">{schoolsError}</Alert>}
+
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatCard label="Total Schools" value={allSchools.length} icon="🏫" />
+          <StatCard label="Total Schools" value={totalSchoolCount} icon="🏫" />
           <StatCard label="Submitted Today" value={submittedSchoolIds.size} tone="brand" icon="✅" />
           <StatCard label="Pending Schools" value={pendingSchools.length} tone="amber" icon="⏳" />
           <StatCard label="Fresh Admissions" value={totals.fresh} tone="blue" icon="🆕" />
