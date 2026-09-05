@@ -22,6 +22,15 @@ export interface Profile {
   created_at: string;
 }
 
+/**
+ * A profile enriched with its auth email address. Email lives on
+ * `auth.users`, not `profiles`, so this is only available where it has
+ * been joined in server-side code with the service-role client.
+ */
+export interface HeadteacherUser extends Profile {
+  email: string | null;
+}
+
 export interface DailyEnrollment {
   id: string;
   school_id: string;

@@ -3,36 +3,77 @@
 import { FormEvent, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { headteacherSchema } from "@/lib/validation";
-import type { Profile, School } from "@/lib/types";
+import type { HeadteacherUser, School } from "@/lib/types";
 import { Card } from "@/components/Card";
 import { Input } from "@/components/Input";
 import { Select } from "@/components/Select";
 import { Button } from "@/components/Button";
 import { Alert } from "@/components/Alert";
 import { EmptyState } from "@/components/EmptyState";
+import { Spinner } from "@/components/Spinner";
 
 const emptyForm = { full_name: "", email: "", mobile_number: "", password: "", school_id: "" };
 
 interface Props {
-  initialUsers: Profile[];
+  initialUsers: HeadteacherUser[];
   schools: School[];
-  schoolsError?: string | null;
+  initialError?: string | null;
 }
 
-export function UsersManager({ initialUsers, schools, schoolsError = null }: Props) {
-  const [users, setUsers] = useState<Profile[]>(initialUsers);
+export function UsersManager({ initialUsers, schools, initialError = null }: Props) {
+  const [users, setUsers] = useState<HeadteacherUser[]>(initialUsers);
   const [form, setForm] = useState(emptyForm);
+  const [showForm, setShowForm] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [error, setError] = useState<string | null>(schoolsError);
+  const [error, setError] = useState<string | null>(initialError);
   const [success, setSuccess] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [reassigning, setReassigning] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
 
-  const schoolName = (id: string | null) => schools.find((s) => s.id === id)?.school_name ?? "Not assigned";
+  const schoolById = new Map(schools.map((s) => [s.id, s]));
+  const schoolName = (id: string | null) => (id ? schoolById.get(id)?.school_name ?? "Unknown School" : null);
+
+  const headteacherCount = users.filter((u) => u.role === "headteacher").length;
+
+  const query = search.trim().toLowerCase();
+  const filtered = query
+    ? users.filter((u) => {
+        const school = schoolName(u.school_id) ?? "";
+        return (
+          u.full_name.toLowerCase().includes(query) ||
+          (u.email ?? "").toLowerCase().includes(query) ||
+          (u.mobile_number ?? "").toLowerCase().includes(query) ||
+          school.toLowerCase().includes(query)
+        );
+      })
+    : users;
 
   const availableSchools = schools.filter(
     (s) => !users.some((u) => u.school_id === s.id && u.role === "headteacher")
   );
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/headteachers");
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Could not refresh the user list.");
+      setUsers(json.users as HeadteacherUser[]);
+    } catch (err) {
+      setError((err as Error)?.message ?? "Could not refresh the user list. Please check your connection and try again.");
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  function handleCancelForm() {
+    setForm(emptyForm);
+    setErrors({});
+    setShowForm(false);
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -66,14 +107,19 @@ export function UsersManager({ initialUsers, schools, schoolsError = null }: Pro
 
     const supabase = createClient();
     const { data: newProfile } = await supabase.from("profiles").select("*").eq("id", json.id).single();
-    if (newProfile) setUsers((prev) => [...prev, newProfile as Profile].sort((a, b) => a.full_name.localeCompare(b.full_name)));
+    if (newProfile) {
+      const newUser: HeadteacherUser = { ...newProfile, email: json.email ?? result.data.email };
+      setUsers((prev) => [...prev, newUser].sort((a, b) => a.full_name.localeCompare(b.full_name)));
+    }
 
     setSuccess(`Headteacher account created for ${result.data.full_name}.`);
     setForm(emptyForm);
+    setShowForm(false);
   }
 
   async function handleReassign(userId: string, schoolId: string) {
     setReassigning(userId);
+    setError(null);
     const supabase = createClient();
     const { data, error: updateError } = await supabase
       .from("profiles")
@@ -86,89 +132,95 @@ export function UsersManager({ initialUsers, schools, schoolsError = null }: Pro
       setError("Could not reassign school.");
       return;
     }
-    setUsers((prev) => prev.map((u) => (u.id === userId ? (data as Profile) : u)));
+    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, ...data } : u)));
   }
 
   return (
     <div className="space-y-6">
-      <Card>
-        <p className="mb-3 text-sm font-bold text-brand-900">Add New Headteacher</p>
-        {error && <div className="mb-3"><Alert type="error">{error}</Alert></div>}
-        {success && <div className="mb-3"><Alert type="success">{success}</Alert></div>}
-        <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Input
-            label="Full Name"
-            value={form.full_name}
-            onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))}
-            error={errors.full_name}
-          />
-          <Input
-            label="Email"
-            type="email"
-            value={form.email}
-            onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-            error={errors.email}
-          />
-          <Input
-            label="Mobile Number"
-            value={form.mobile_number}
-            onChange={(e) => setForm((f) => ({ ...f, mobile_number: e.target.value }))}
-            error={errors.mobile_number}
-          />
-          <Input
-            label="Temporary Password"
-            type="text"
-            value={form.password}
-            onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-            error={errors.password}
-            hint="Share this securely with the headteacher; they can change it later."
-          />
-          <Select
-            label="Assign School"
-            value={form.school_id}
-            onChange={(e) => setForm((f) => ({ ...f, school_id: e.target.value }))}
-            error={errors.school_id}
-          >
-            <option value="">Select a school</option>
-            {availableSchools.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.school_name} - {s.emis_code}
-              </option>
-            ))}
-          </Select>
+      {error && <Alert type="error">{error}</Alert>}
+      {success && <Alert type="success">{success}</Alert>}
 
-          <div className="sm:col-span-2">
-            <Button type="submit" loading={saving}>
-              Add Headteacher
+      {/* Search + stats — shown first so admins can find an existing user before adding a new one */}
+      <Card>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-bold text-brand-900">
+              Total Headteachers: {headteacherCount} <span className="text-gray-400">·</span> Total Users: {users.length}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleRefresh}
+              loading={refreshing}
+              className="px-3 py-2 text-sm"
+            >
+              ↻ Refresh
             </Button>
           </div>
-        </form>
+          <Input
+            placeholder="Search by Name, Email, Mobile or School"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="text-base"
+          />
+          {query && (
+            <p className="text-xs text-gray-500">
+              {filtered.length} user{filtered.length === 1 ? "" : "s"} matching &ldquo;{search.trim()}&rdquo;
+            </p>
+          )}
+        </div>
       </Card>
 
+      {/* User list */}
       <Card>
-        <p className="mb-3 text-sm font-bold text-brand-900">All Users ({users.length})</p>
-        {users.length === 0 ? (
-          <EmptyState icon="👤" title="No users found" />
+        {refreshing ? (
+          <Spinner label="Refreshing users..." />
+        ) : filtered.length === 0 ? (
+          users.length === 0 ? (
+            <EmptyState
+              icon="👤"
+              title="No users found"
+              description="Add your first headteacher using the form below, or press Refresh if you expected data here."
+            />
+          ) : (
+            <EmptyState icon="🔍" title="No users match your search" />
+          )
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-left text-sm">
+            <table className="w-full min-w-[760px] text-left text-sm">
               <thead>
                 <tr className="border-b border-brand-100 text-gray-500">
-                  <th className="py-2 pr-2">Name</th>
+                  <th className="py-2 pr-2">Full Name</th>
+                  <th className="py-2 pr-2">Email</th>
                   <th className="py-2 pr-2">Mobile</th>
-                  <th className="py-2 pr-2">Role</th>
                   <th className="py-2 pr-2">Assigned School</th>
+                  <th className="py-2 pr-2">Account Status</th>
+                  <th className="py-2 pr-2">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {users.map((u) => (
+                {filtered.map((u) => (
                   <tr key={u.id} className="border-b border-brand-50">
                     <td className="py-2 pr-2 font-medium text-brand-900">{u.full_name}</td>
+                    <td className="py-2 pr-2 text-gray-600">{u.email ?? "—"}</td>
                     <td className="py-2 pr-2 text-gray-600">{u.mobile_number ?? "—"}</td>
+                    <td className="py-2 pr-2 text-gray-600">
+                      {u.role === "headteacher" ? schoolName(u.school_id) ?? "Not assigned" : "—"}
+                    </td>
                     <td className="py-2 pr-2">
-                      <span className="rounded-full bg-brand-100 px-2 py-0.5 text-xs font-semibold text-brand-800">
-                        {u.role}
-                      </span>
+                      {u.role === "admin" ? (
+                        <span className="rounded-full bg-brand-100 px-2 py-0.5 text-xs font-semibold text-brand-800">
+                          Admin
+                        </span>
+                      ) : u.school_id ? (
+                        <span className="rounded-full bg-brand-100 px-2 py-0.5 text-xs font-semibold text-brand-800">
+                          Assigned
+                        </span>
+                      ) : (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                          Not Assigned
+                        </span>
+                      )}
                     </td>
                     <td className="py-2 pr-2">
                       {u.role === "headteacher" ? (
@@ -186,7 +238,7 @@ export function UsersManager({ initialUsers, schools, schoolsError = null }: Pro
                           ))}
                         </select>
                       ) : (
-                        schoolName(u.school_id)
+                        <span className="text-xs text-gray-400">—</span>
                       )}
                     </td>
                   </tr>
@@ -194,6 +246,79 @@ export function UsersManager({ initialUsers, schools, schoolsError = null }: Pro
               </tbody>
             </table>
           </div>
+        )}
+      </Card>
+
+      {/* Add Headteacher — collapsed by default so search & list are prioritized on mobile */}
+      <Card>
+        {!showForm ? (
+          <Button type="button" variant="secondary" fullWidth onClick={() => setShowForm(true)}>
+            + Add New Headteacher
+          </Button>
+        ) : (
+          <>
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-sm font-bold text-brand-900">Add New Headteacher</p>
+              <button
+                type="button"
+                onClick={handleCancelForm}
+                className="text-xs font-semibold text-gray-500 hover:text-brand-700"
+              >
+                ✕ Close
+              </button>
+            </div>
+            <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Input
+                label="Full Name"
+                value={form.full_name}
+                onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))}
+                error={errors.full_name}
+              />
+              <Input
+                label="Email"
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                error={errors.email}
+              />
+              <Input
+                label="Mobile Number"
+                value={form.mobile_number}
+                onChange={(e) => setForm((f) => ({ ...f, mobile_number: e.target.value }))}
+                error={errors.mobile_number}
+              />
+              <Input
+                label="Temporary Password"
+                type="text"
+                value={form.password}
+                onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                error={errors.password}
+                hint="Share this securely with the headteacher; they can change it later."
+              />
+              <Select
+                label="Assign School"
+                value={form.school_id}
+                onChange={(e) => setForm((f) => ({ ...f, school_id: e.target.value }))}
+                error={errors.school_id}
+              >
+                <option value="">Select a school</option>
+                {availableSchools.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.school_name} - {s.emis_code}
+                  </option>
+                ))}
+              </Select>
+
+              <div className="flex gap-3 sm:col-span-2">
+                <Button type="submit" loading={saving}>
+                  Add Headteacher
+                </Button>
+                <Button type="button" variant="outline" onClick={handleCancelForm}>
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </>
         )}
       </Card>
     </div>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getUsersWithEmail } from "@/lib/services/users";
 import { headteacherSchema } from "@/lib/validation";
 
 async function requireAdmin() {
@@ -12,6 +13,21 @@ async function requireAdmin() {
 
   const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
   return profile?.role === "admin" ? user : null;
+}
+
+export async function GET() {
+  const admin = await requireAdmin();
+  if (!admin) {
+    return NextResponse.json({ error: "Not authorized." }, { status: 403 });
+  }
+
+  try {
+    const supabase = await createClient();
+    const users = await getUsersWithEmail(supabase, createAdminClient());
+    return NextResponse.json({ users });
+  } catch {
+    return NextResponse.json({ error: "Could not load users. Please try again." }, { status: 500 });
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -37,8 +53,15 @@ export async function POST(request: NextRequest) {
   });
 
   if (createError || !created.user) {
+    const isDuplicate =
+      createError?.code === "email_exists" ||
+      /already been registered|already exists|already registered/i.test(createError?.message ?? "");
     return NextResponse.json(
-      { error: createError?.message ?? "Could not create user account." },
+      {
+        error: isDuplicate
+          ? "An account with this email address already exists. Please use a different email."
+          : createError?.message ?? "Could not create user account.",
+      },
       { status: 400 }
     );
   }
@@ -52,5 +75,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: profileError.message }, { status: 400 });
   }
 
-  return NextResponse.json({ id: created.user.id });
+  return NextResponse.json({ id: created.user.id, email });
 }
