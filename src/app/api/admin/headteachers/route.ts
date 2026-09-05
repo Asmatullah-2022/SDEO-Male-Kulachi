@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { describeAdminError } from "@/lib/supabase/admin-error";
 import { getUsersWithEmail } from "@/lib/services/users";
 import { headteacherSchema } from "@/lib/validation";
 
@@ -25,8 +26,10 @@ export async function GET() {
     const supabase = await createClient();
     const users = await getUsersWithEmail(supabase, createAdminClient());
     return NextResponse.json({ users });
-  } catch {
-    return NextResponse.json({ error: "Could not load users. Please try again." }, { status: 500 });
+  } catch (err) {
+    const { log, userMessage } = describeAdminError(err, "GET /api/admin/headteachers");
+    console.error(log);
+    return NextResponse.json({ error: userMessage }, { status: 500 });
   }
 }
 
@@ -43,7 +46,15 @@ export async function POST(request: NextRequest) {
   }
 
   const { full_name, email, mobile_number, password, school_id } = result.data;
-  const adminClient = createAdminClient();
+
+  let adminClient;
+  try {
+    adminClient = createAdminClient();
+  } catch (err) {
+    const { log, userMessage } = describeAdminError(err, "POST /api/admin/headteachers (createAdminClient)");
+    console.error(log);
+    return NextResponse.json({ error: userMessage }, { status: 500 });
+  }
 
   const { data: created, error: createError } = await adminClient.auth.admin.createUser({
     email,
@@ -56,6 +67,9 @@ export async function POST(request: NextRequest) {
     const isDuplicate =
       createError?.code === "email_exists" ||
       /already been registered|already exists|already registered/i.test(createError?.message ?? "");
+    if (!isDuplicate) {
+      console.error(`[POST /api/admin/headteachers] auth.admin.createUser failed: ${createError?.message}`);
+    }
     return NextResponse.json(
       {
         error: isDuplicate
@@ -72,6 +86,7 @@ export async function POST(request: NextRequest) {
     .eq("id", created.user.id);
 
   if (profileError) {
+    console.error(`[POST /api/admin/headteachers] profiles update failed: ${profileError.message}`);
     return NextResponse.json({ error: profileError.message }, { status: 400 });
   }
 
