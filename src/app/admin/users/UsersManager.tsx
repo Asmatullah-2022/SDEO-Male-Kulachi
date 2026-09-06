@@ -121,7 +121,7 @@ export function UsersManager({ initialUsers, schools, initialError = null }: Pro
     if (u.role !== "headteacher") return <span className="text-xs text-gray-400">—</span>;
     return (
       <select
-        className="w-full rounded-lg border border-brand-200 px-2 py-1.5 text-xs sm:w-auto"
+        className="w-full rounded-lg border border-brand-200 px-2 py-1.5 text-xs md:w-auto"
         value={u.school_id ?? ""}
         disabled={reassigning === u.id}
         onChange={(e) => handleReassign(u.id, e.target.value)}
@@ -197,10 +197,11 @@ export function UsersManager({ initialUsers, schools, initialError = null }: Pro
             </Button>
           </div>
           <Input
-            placeholder="Search by Name, Email, Mobile or School"
+            placeholder="Search Name, Email, Mobile, School"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="text-base"
+            className="w-full min-w-0"
+            style={{ fontSize: "0.875rem" }}
           />
           {query && (
             <p className="text-xs text-gray-500">
@@ -226,8 +227,8 @@ export function UsersManager({ initialUsers, schools, initialError = null }: Pro
           )
         ) : (
           <>
-            {/* Mobile card list — email addresses get full width, no horizontal scrolling */}
-            <div className="divide-y divide-brand-50 sm:hidden">
+            {/* Mobile card list (below 768px) — email addresses get full width, no horizontal scrolling */}
+            <div className="divide-y divide-brand-50 md:hidden">
               {filtered.map((u) => (
                 <div key={u.id} className="py-3">
                   <div className="flex items-start justify-between gap-2">
@@ -246,8 +247,8 @@ export function UsersManager({ initialUsers, schools, initialError = null }: Pro
               ))}
             </div>
 
-            {/* Desktop/tablet table */}
-            <div className="hidden overflow-x-auto sm:block">
+            {/* Tablet/desktop table (768px and up) */}
+            <div className="hidden overflow-x-auto md:block">
               <table className="w-full min-w-[760px] text-left text-sm">
                 <thead>
                   <tr className="border-b border-brand-100 text-gray-500">
