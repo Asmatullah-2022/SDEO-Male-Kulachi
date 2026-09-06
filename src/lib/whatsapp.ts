@@ -137,6 +137,19 @@ export function buildDailyReportReminderMessage(
 }
 
 /**
+ * The permanent, public "Join Official WhatsApp Group" link shown on the
+ * public Enrollment Submission Portal and in the Admin Dashboard header.
+ * Unlike OFFICIAL_WHATSAPP_GROUP_URL above (a temporary test-only override
+ * for the headteacher's post-submission share flow), this is meant to be
+ * live by default — a WhatsApp group invite link isn't a secret, it's
+ * designed to be shared and clicked by anyone. Still overridable via env
+ * var if the office ever needs to swap the group without a code change.
+ */
+export const OFFICIAL_WHATSAPP_GROUP_JOIN_URL =
+  process.env.NEXT_PUBLIC_WHATSAPP_GROUP_JOIN_URL ||
+  "https://chat.whatsapp.com/HyHhzVt62D5A7BqPmgXDt4?s=cl&p=a&mlu=4&ilr=4";
+
+/**
  * Best-effort normalization of a Pakistani mobile number (as typically
  * entered by hand — "0300-1234567", "03001234567", "+923001234567", etc.)
  * into the digits-only international format wa.me requires. Returns null

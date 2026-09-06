@@ -3,7 +3,12 @@ import { getCurrentUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getSchoolCount, getSchools } from "@/lib/services/schools";
 import { todayISO, isValidISODate, formatDisplayDate } from "@/lib/date";
-import { buildAbsenceReminderMessage, buildWhatsAppDeepLink, toWhatsAppNumber } from "@/lib/whatsapp";
+import {
+  buildAbsenceReminderMessage,
+  buildWhatsAppDeepLink,
+  toWhatsAppNumber,
+  OFFICIAL_WHATSAPP_GROUP_JOIN_URL,
+} from "@/lib/whatsapp";
 import { Header } from "@/components/Header";
 import { AdminNav } from "@/components/AdminNav";
 import { StatCard } from "@/components/StatCard";
@@ -14,6 +19,7 @@ import { Input } from "@/components/Input";
 import { Button } from "@/components/Button";
 import { EnrollmentTrendChart } from "./EnrollmentTrendChart";
 import { MonitorTable, type MonitorRow } from "./MonitorTable";
+import { RealtimeRefresher } from "./RealtimeRefresher";
 import type { School } from "@/lib/types";
 
 interface HeadteacherInfo {
@@ -116,11 +122,21 @@ export default async function AdminOverviewPage({
 
   return (
     <main className="flex min-h-dvh flex-col bg-brand-50">
+      <RealtimeRefresher />
       <Header title="SDEO Kulachi Admin" subtitle="SDEO Office Dashboard" homeHref="/admin" />
       <AdminNav />
 
       <div className="mx-auto w-full max-w-5xl flex-1 space-y-6 px-4 py-6">
         {schoolsError && <Alert type="error">{schoolsError}</Alert>}
+
+        <a
+          href={OFFICIAL_WHATSAPP_GROUP_JOIN_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center justify-center gap-2 rounded-xl bg-[#25D366] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1ebc59]"
+        >
+          📱 Join Official WhatsApp Group
+        </a>
 
         <Card>
           <form action="/admin" method="get" className="flex flex-wrap items-end gap-3">
