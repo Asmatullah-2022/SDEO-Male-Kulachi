@@ -5,6 +5,14 @@ export function todayISO(): string {
   return local.toISOString().slice(0, 10);
 }
 
+/** True for a syntactically valid, real calendar date in YYYY-MM-DD form. */
+export function isValidISODate(value: string | undefined | null): value is string {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
 /** Formats an ISO date (YYYY-MM-DD) as DD-MM-YYYY for display / WhatsApp messages. */
 export function formatDisplayDate(isoDate: string): string {
   const [year, month, day] = isoDate.split("-");
