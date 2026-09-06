@@ -6,6 +6,7 @@ import { todayISO, formatDateTime, formatDisplayDate } from "@/lib/date";
 import { toCSV, downloadCSV } from "@/lib/csv";
 import { Card } from "@/components/Card";
 import { Input } from "@/components/Input";
+import { Select } from "@/components/Select";
 import { Button } from "@/components/Button";
 import { StatCard } from "@/components/StatCard";
 import { EmptyState } from "@/components/EmptyState";
@@ -18,22 +19,37 @@ interface Props {
   users: HeadteacherUser[];
 }
 
+interface HeadteacherInfo {
+  name: string;
+  mobile: string | null;
+}
+
 const MONTH_LABEL_FORMATTER = new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric" });
 
 export function ReportsExplorer({ reports, schools, users }: Props) {
   const today = todayISO();
   const [selectedDate, setSelectedDate] = useState(today);
   const [search, setSearch] = useState("");
-  const [selectedMonth, setSelectedMonth] = useState(today.slice(0, 7));
 
   const schoolById = useMemo(() => new Map(schools.map((s) => [s.id, s])), [schools]);
   const headteacherBySchoolId = useMemo(() => {
-    const map = new Map<string, string>();
+    const map = new Map<string, HeadteacherInfo>();
     users.forEach((u) => {
-      if (u.role === "headteacher" && u.school_id) map.set(u.school_id, u.full_name);
+      if (u.role === "headteacher" && u.school_id) {
+        map.set(u.school_id, { name: u.full_name, mobile: u.mobile_number });
+      }
     });
     return map;
   }, [users]);
+
+  // ---- Available months, newest first, derived from actual report data ----
+  const availableMonths = useMemo(() => {
+    const set = new Set(reports.map((r) => r.report_date.slice(0, 7)));
+    set.add(today.slice(0, 7)); // always offer the current month, even with zero submissions yet
+    return Array.from(set).sort((a, b) => b.localeCompare(a));
+  }, [reports, today]);
+
+  const [selectedMonth, setSelectedMonth] = useState(availableMonths[0] ?? today.slice(0, 7));
 
   // ---- Daily view: reports for the selected date, optionally narrowed by search ----
   const reportsForDate = useMemo(
@@ -53,19 +69,28 @@ export function ReportsExplorer({ reports, schools, users }: Props) {
     () =>
       reportsForDate
         .filter((r) => matchesQuery(r.school_id))
-        .sort((a, b) => (schoolById.get(a.school_id)?.school_name ?? "").localeCompare(
-          schoolById.get(b.school_id)?.school_name ?? ""
-        )),
+        .sort((a, b) =>
+          (schoolById.get(a.school_id)?.school_name ?? "").localeCompare(
+            schoolById.get(b.school_id)?.school_name ?? ""
+          )
+        ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [reportsForDate, query, schoolById]
   );
 
   const activeSchools = useMemo(() => schools.filter((s) => s.status === "active"), [schools]);
   const submittedSchoolIds = useMemo(() => new Set(reportsForDate.map((r) => r.school_id)), [reportsForDate]);
+
+  // Unfiltered pending list — used for the accurate summary-card count so the
+  // Pending Reports stat never drifts from the search box's narrowed view.
+  const allPendingSchools = useMemo(
+    () => activeSchools.filter((s) => !submittedSchoolIds.has(s.id)),
+    [activeSchools, submittedSchoolIds]
+  );
   const pendingSchools = useMemo(
-    () => activeSchools.filter((s) => !submittedSchoolIds.has(s.id) && matchesQuery(s.id)),
+    () => allPendingSchools.filter((s) => matchesQuery(s.id)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [activeSchools, submittedSchoolIds, query]
+    [allPendingSchools, query]
   );
 
   const totals = useMemo(
@@ -115,6 +140,15 @@ export function ReportsExplorer({ reports, schools, users }: Props) {
     [monthReports]
   );
 
+  // Same meaning as the daily "Pending Reports" card, scoped to the whole
+  // month: active schools that never sent in a single report during it —
+  // not a school-day tally, which would produce a large, confusing number
+  // that means something different from the daily card of the same name.
+  const monthlyPending = useMemo(() => {
+    const schoolsWithSubmission = new Set(monthReports.map((r) => r.school_id));
+    return activeSchools.filter((s) => !schoolsWithSubmission.has(s.id)).length;
+  }, [monthReports, activeSchools]);
+
   const schoolComparison = useMemo(() => {
     const totalBySchool = new Map<string, number>();
     monthReports.forEach((r) => {
@@ -129,18 +163,22 @@ export function ReportsExplorer({ reports, schools, users }: Props) {
       .slice(0, 10);
   }, [monthReports, schoolById]);
 
+  function dayOnlyLabel(isoDate: string): string {
+    return isoDate.slice(8, 10);
+  }
+
   function handleExportCSV() {
     const rows = filteredReports.map((r, i) => ({
       "S.No": i + 1,
       "School Name": schoolById.get(r.school_id)?.school_name ?? "",
       "EMIS Code": schoolById.get(r.school_id)?.emis_code ?? "",
-      "Headteacher Name": headteacherBySchoolId.get(r.school_id) ?? "Not Assigned",
+      "Headteacher Name": headteacherBySchoolId.get(r.school_id)?.name ?? "Not Assigned",
       "Drop Out": r.dropout,
       Public: r.public_admission,
       Private: r.private_admission,
       "Fresh Admission": r.fresh_admission,
       "Total Enrollment": r.total_enrollment,
-      "Submitted At": formatDateTime(r.submitted_at),
+      "Submission Time": formatDateTime(r.submitted_at),
     }));
     downloadCSV(`enrollment-report-${selectedDate}.csv`, toCSV(rows));
   }
@@ -150,10 +188,10 @@ export function ReportsExplorer({ reports, schools, users }: Props) {
       {/* Print-only official letterhead */}
       <div className="hidden print:block">
         <div className="border-b-2 border-black pb-3 text-center">
-          <p className="text-lg font-bold">Office of the Sub-Divisional Education Officer (Male), Kulachi</p>
+          <p className="text-lg font-bold">SDEO (Male) Kulachi</p>
           <p className="text-sm">District Dera Ismail Khan</p>
-          <p className="mt-2 text-base font-semibold">Daily Enrollment Report — {formatDisplayDate(selectedDate)}</p>
-          <p className="text-xs text-gray-600">Generated on {formatDateTime(new Date().toISOString())}</p>
+          <p className="mt-1 text-base font-semibold">Daily Enrollment Monitoring Report</p>
+          <p className="mt-2 text-sm">Date: {formatDisplayDate(selectedDate)}</p>
         </div>
       </div>
 
@@ -201,7 +239,7 @@ export function ReportsExplorer({ reports, schools, users }: Props) {
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4 print:grid-cols-4">
         <StatCard label="Total Schools" value={schools.length} icon="🏫" />
         <StatCard label="Reports Submitted" value={reportsForDate.length} tone="brand" icon="✅" />
-        <StatCard label="Pending Reports" value={activeSchools.length - submittedSchoolIds.size} tone="amber" icon="⏳" />
+        <StatCard label="Pending Reports" value={allPendingSchools.length} tone="amber" icon="⏳" />
         <StatCard label="Fresh Admissions" value={totals.fresh} tone="blue" icon="🆕" />
         <StatCard label="Public Admissions" value={totals.publicAdm} tone="blue" icon="🏛️" />
         <StatCard label="Private Admissions" value={totals.privateAdm} tone="blue" icon="🏢" />
@@ -230,7 +268,7 @@ export function ReportsExplorer({ reports, schools, users }: Props) {
                         </p>
                         <p className="text-xs text-gray-500">EMIS: {school?.emis_code ?? "—"}</p>
                         <p className="text-xs text-gray-500">
-                          Headteacher: {headteacherBySchoolId.get(r.school_id) ?? "Not Assigned"}
+                          Headteacher: {headteacherBySchoolId.get(r.school_id)?.name ?? "Not Assigned"}
                         </p>
                       </div>
                     </div>
@@ -277,7 +315,7 @@ export function ReportsExplorer({ reports, schools, users }: Props) {
                     <th className="py-2 pr-2">Private</th>
                     <th className="py-2 pr-2">Fresh</th>
                     <th className="py-2 pr-2">Total</th>
-                    <th className="py-2 pr-2">Submitted At</th>
+                    <th className="py-2 pr-2">Submission Time</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -290,7 +328,7 @@ export function ReportsExplorer({ reports, schools, users }: Props) {
                           {school?.school_name ?? "—"}
                         </td>
                         <td className="py-2 pr-2">{school?.emis_code ?? "—"}</td>
-                        <td className="py-2 pr-2">{headteacherBySchoolId.get(r.school_id) ?? "Not Assigned"}</td>
+                        <td className="py-2 pr-2">{headteacherBySchoolId.get(r.school_id)?.name ?? "Not Assigned"}</td>
                         <td className="py-2 pr-2">{r.dropout}</td>
                         <td className="py-2 pr-2">{r.public_admission}</td>
                         <td className="py-2 pr-2">{r.private_admission}</td>
@@ -317,31 +355,49 @@ export function ReportsExplorer({ reports, schools, users }: Props) {
         ) : (
           <>
             <div className="divide-y divide-brand-50 sm:hidden print:hidden">
-              {pendingSchools.map((s) => (
+              {pendingSchools.map((s, i) => (
                 <div key={s.id} className="py-3">
-                  <p className="font-semibold text-brand-900">{s.school_name}</p>
+                  <p className="font-semibold text-brand-900">
+                    {i + 1}. {s.school_name}
+                  </p>
                   <p className="text-xs text-gray-500">EMIS: {s.emis_code}</p>
                   <p className="text-xs text-gray-500">
-                    Headteacher: {headteacherBySchoolId.get(s.id) ?? "Not assigned"}
+                    Headteacher: {headteacherBySchoolId.get(s.id)?.name ?? "Not assigned"}
                   </p>
+                  <p className="text-xs text-gray-500">
+                    Mobile: {headteacherBySchoolId.get(s.id)?.mobile ?? "—"}
+                  </p>
+                  <span className="mt-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+                    Pending
+                  </span>
                 </div>
               ))}
             </div>
             <div className="hidden overflow-x-auto sm:block print:block">
-              <table className="w-full min-w-[600px] text-left text-sm">
+              <table className="w-full min-w-[700px] text-left text-sm">
                 <thead>
                   <tr className="border-b border-brand-100 text-gray-500 print:text-black">
+                    <th className="py-2 pr-2">S.No</th>
                     <th className="py-2 pr-2">School Name</th>
                     <th className="py-2 pr-2">EMIS Code</th>
                     <th className="py-2 pr-2">Headteacher</th>
+                    <th className="py-2 pr-2">Mobile Number</th>
+                    <th className="py-2 pr-2">Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {pendingSchools.map((s) => (
+                  {pendingSchools.map((s, i) => (
                     <tr key={s.id} className="border-b border-brand-50">
+                      <td className="py-2 pr-2">{i + 1}</td>
                       <td className="py-2 pr-2 font-medium text-brand-900 print:text-black">{s.school_name}</td>
                       <td className="py-2 pr-2">{s.emis_code}</td>
-                      <td className="py-2 pr-2">{headteacherBySchoolId.get(s.id) ?? "Not assigned"}</td>
+                      <td className="py-2 pr-2">{headteacherBySchoolId.get(s.id)?.name ?? "Not assigned"}</td>
+                      <td className="py-2 pr-2">{headteacherBySchoolId.get(s.id)?.mobile ?? "—"}</td>
+                      <td className="py-2 pr-2">
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 print:bg-transparent print:px-0 print:text-black">
+                          Pending
+                        </span>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -357,21 +413,27 @@ export function ReportsExplorer({ reports, schools, users }: Props) {
           <p className="text-sm font-bold text-brand-900">
             Monthly Analytics — {MONTH_LABEL_FORMATTER.format(new Date(`${selectedMonth}-01T00:00:00`))}
           </p>
-          <Input
-            type="month"
+          <Select
             value={selectedMonth}
-            max={today.slice(0, 7)}
             onChange={(e) => setSelectedMonth(e.target.value)}
             className="w-auto py-1.5 text-sm"
-          />
+          >
+            {availableMonths.map((m) => (
+              <option key={m} value={m}>
+                {MONTH_LABEL_FORMATTER.format(new Date(`${m}-01T00:00:00`))}
+              </option>
+            ))}
+          </Select>
         </div>
 
         {monthReports.length === 0 ? (
           <EmptyState icon="📊" title="No submissions for this month yet" />
         ) : (
           <div className="space-y-5">
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-              <StatCard label="Submissions" value={monthlyTotals.submissions} icon="📄" />
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+              <StatCard label="Total Schools" value={schools.length} icon="🏫" />
+              <StatCard label="Reports Submitted" value={monthlyTotals.submissions} tone="brand" icon="✅" />
+              <StatCard label="Pending Reports" value={monthlyPending} tone="amber" icon="⏳" />
               <StatCard label="Fresh Admissions" value={monthlyTotals.fresh} tone="blue" icon="🆕" />
               <StatCard label="Public Admissions" value={monthlyTotals.publicAdm} tone="blue" icon="🏛️" />
               <StatCard label="Private Admissions" value={monthlyTotals.privateAdm} tone="blue" icon="🏢" />
@@ -380,7 +442,7 @@ export function ReportsExplorer({ reports, schools, users }: Props) {
 
             <div>
               <p className="mb-2 text-xs font-semibold text-gray-500">Daily Enrollment Trend</p>
-              <EnrollmentTrendChart data={dailyTrend} />
+              <EnrollmentTrendChart data={dailyTrend} formatLabel={dayOnlyLabel} />
             </div>
 
             <div>
@@ -390,6 +452,12 @@ export function ReportsExplorer({ reports, schools, users }: Props) {
           </div>
         )}
       </Card>
+
+      {/* Print-only footer */}
+      <div className="hidden print:block print:mt-6 print:border-t print:border-black print:pt-2 print:text-xs print:text-gray-600">
+        Report generated on {formatDateTime(new Date().toISOString())} — SDEO (Male) Kulachi Daily Enrollment
+        Monitoring System
+      </div>
     </div>
   );
 }
