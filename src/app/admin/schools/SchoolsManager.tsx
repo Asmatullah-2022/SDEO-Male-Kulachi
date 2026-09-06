@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { schoolSchema } from "@/lib/validation";
 import { addSchool, deleteSchool, getSchools, updateSchool } from "@/lib/services/schools";
@@ -40,6 +40,7 @@ export function SchoolsManager() {
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
+  const formCardRef = useRef<HTMLDivElement>(null);
 
   const query = search.trim().toLowerCase();
   const filtered = query
@@ -74,6 +75,17 @@ export function SchoolsManager() {
     setSuccess(null);
     setShowForm(true);
   }
+
+  // The edit form lives in a Card below the school list, so on a long list
+  // tapping "Edit" near the top opens the form off-screen with nothing
+  // visibly changing — easy to mistake for the button not responding at
+  // all. Scroll it into view once it's actually rendered (effect runs
+  // after the DOM commits showForm=true), not inside startEdit itself.
+  useEffect(() => {
+    if (showForm && editingId) {
+      formCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [showForm, editingId]);
 
   function resetForm() {
     setEditingId(null);
@@ -222,14 +234,7 @@ export function SchoolsManager() {
                       <dd>{s.circle ?? "—"}</dd>
                     </div>
                   </dl>
-                  <div className="mt-3 flex gap-4">
-                    <button className="text-xs font-semibold text-brand-700" onClick={() => startEdit(s)}>
-                      Edit
-                    </button>
-                    <button className="text-xs font-semibold text-red-600" onClick={() => handleDelete(s.id)}>
-                      Delete
-                    </button>
-                  </div>
+                  <SchoolRowActions school={s} onEdit={startEdit} onDelete={handleDelete} fullWidth />
                 </div>
               ))}
             </div>
@@ -265,13 +270,8 @@ export function SchoolsManager() {
                           {s.status}
                         </span>
                       </td>
-                      <td className="flex gap-2 py-2 pr-2">
-                        <button className="text-xs font-semibold text-brand-700" onClick={() => startEdit(s)}>
-                          Edit
-                        </button>
-                        <button className="text-xs font-semibold text-red-600" onClick={() => handleDelete(s.id)}>
-                          Delete
-                        </button>
+                      <td className="py-2 pr-2">
+                        <SchoolRowActions school={s} onEdit={startEdit} onDelete={handleDelete} />
                       </td>
                     </tr>
                   ))}
@@ -283,7 +283,7 @@ export function SchoolsManager() {
       </Card>
 
       {/* Add / Edit School — collapsed by default so search & list are prioritized on mobile */}
-      <Card>
+      <Card ref={formCardRef}>
         {!showForm ? (
           <Button type="button" variant="secondary" fullWidth onClick={() => setShowForm(true)}>
             + Add New School
@@ -351,6 +351,54 @@ export function SchoolsManager() {
           </>
         )}
       </Card>
+    </div>
+  );
+}
+
+/**
+ * Edit/Delete actions, shared by the mobile card list and the desktop
+ * table. Previously these were bare unstyled <button> text — visually
+ * indistinguishable from plain text and, more importantly, with no
+ * padding their actual tap target was just the glyph outlines of the
+ * words themselves. On a touchscreen a tap landing a few pixels outside
+ * that tiny box lands on the surrounding row instead and does nothing,
+ * which reads as "the button doesn't work." Real button chrome plus a
+ * 44px-tall hit area (Google's minimum recommended touch target size)
+ * fixes both the affordance and the actual tap reliability.
+ */
+function SchoolRowActions({
+  school,
+  onEdit,
+  onDelete,
+  fullWidth = false,
+}: {
+  school: School;
+  onEdit: (school: School) => void;
+  onDelete: (id: string) => void;
+  fullWidth?: boolean;
+}) {
+  return (
+    <div className={`flex gap-2 ${fullWidth ? "mt-3" : ""}`}>
+      <button
+        type="button"
+        aria-label={`Edit ${school.school_name}`}
+        onClick={() => onEdit(school)}
+        className={`min-h-[44px] rounded-lg border border-brand-200 bg-brand-50 px-3 text-xs font-semibold text-brand-700 active:bg-brand-100 ${
+          fullWidth ? "flex-1" : ""
+        }`}
+      >
+        ✏️ Edit
+      </button>
+      <button
+        type="button"
+        aria-label={`Delete ${school.school_name}`}
+        onClick={() => onDelete(school.id)}
+        className={`min-h-[44px] rounded-lg border border-red-200 bg-red-50 px-3 text-xs font-semibold text-red-600 active:bg-red-100 ${
+          fullWidth ? "flex-1" : ""
+        }`}
+      >
+        🗑️ Delete
+      </button>
     </div>
   );
 }
