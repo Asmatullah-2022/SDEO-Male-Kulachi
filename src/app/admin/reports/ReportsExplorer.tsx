@@ -85,43 +85,88 @@ export function ReportsExplorer({ reports, schools }: { reports: DailyEnrollment
         {filtered.length === 0 ? (
           <EmptyState icon="📄" title="No reports match these filters" />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-brand-100 text-gray-500 print:text-black">
-                  <th className="py-2 pr-2">Date</th>
-                  <th className="py-2 pr-2">School Name</th>
-                  <th className="py-2 pr-2">EMIS Code</th>
-                  <th className="py-2 pr-2">Drop Out</th>
-                  <th className="py-2 pr-2">Public</th>
-                  <th className="py-2 pr-2">Private</th>
-                  <th className="py-2 pr-2">Fresh Admission</th>
-                  <th className="py-2 pr-2">Total Enrollment</th>
-                  <th className="py-2 pr-2">Submitted At</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((r) => {
-                  const school = schoolById.get(r.school_id);
-                  return (
-                    <tr key={r.id} className="border-b border-brand-50">
-                      <td className="py-2 pr-2">{formatDisplayDate(r.report_date)}</td>
-                      <td className="py-2 pr-2 font-medium text-brand-900 print:text-black">
-                        {school?.school_name ?? "—"}
-                      </td>
-                      <td className="py-2 pr-2">{school?.emis_code ?? "—"}</td>
-                      <td className="py-2 pr-2">{r.dropout}</td>
-                      <td className="py-2 pr-2">{r.public_admission}</td>
-                      <td className="py-2 pr-2">{r.private_admission}</td>
-                      <td className="py-2 pr-2">{r.fresh_admission}</td>
-                      <td className="py-2 pr-2 font-semibold">{r.total_enrollment}</td>
-                      <td className="py-2 pr-2 text-gray-500">{formatDateTime(r.submitted_at)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <>
+            {/* Mobile card list — avoids horizontal scrolling on small screens (screen only, not print) */}
+            <div className="divide-y divide-brand-50 sm:hidden print:hidden">
+              {filtered.map((r) => {
+                const school = schoolById.get(r.school_id);
+                return (
+                  <div key={r.id} className="py-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-brand-900">{school?.school_name ?? "—"}</p>
+                        <p className="text-xs text-gray-500">EMIS: {school?.emis_code ?? "—"}</p>
+                      </div>
+                      <p className="shrink-0 text-xs text-gray-500">{formatDisplayDate(r.report_date)}</p>
+                    </div>
+                    <dl className="mt-2 grid grid-cols-4 gap-1 text-center text-xs">
+                      <div className="rounded-lg bg-brand-50 p-1.5">
+                        <dt className="text-[10px] text-gray-500">Drop Out</dt>
+                        <dd className="font-bold text-brand-900">{r.dropout}</dd>
+                      </div>
+                      <div className="rounded-lg bg-brand-50 p-1.5">
+                        <dt className="text-[10px] text-gray-500">Public</dt>
+                        <dd className="font-bold text-brand-900">{r.public_admission}</dd>
+                      </div>
+                      <div className="rounded-lg bg-brand-50 p-1.5">
+                        <dt className="text-[10px] text-gray-500">Private</dt>
+                        <dd className="font-bold text-brand-900">{r.private_admission}</dd>
+                      </div>
+                      <div className="rounded-lg bg-brand-50 p-1.5">
+                        <dt className="text-[10px] text-gray-500">Fresh</dt>
+                        <dd className="font-bold text-brand-900">{r.fresh_admission}</dd>
+                      </div>
+                    </dl>
+                    <p className="mt-1 text-right text-xs font-semibold text-brand-800">
+                      Total Enrollment: {r.total_enrollment}
+                    </p>
+                    <p className="mt-1 text-right text-xs text-gray-400">
+                      Submitted: {formatDateTime(r.submitted_at)}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Desktop/tablet table (also used for print) */}
+            <div className="hidden overflow-x-auto sm:block print:block">
+              <table className="w-full min-w-[760px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-brand-100 text-gray-500 print:text-black">
+                    <th className="py-2 pr-2">Date</th>
+                    <th className="py-2 pr-2">School Name</th>
+                    <th className="py-2 pr-2">EMIS Code</th>
+                    <th className="py-2 pr-2">Drop Out</th>
+                    <th className="py-2 pr-2">Public</th>
+                    <th className="py-2 pr-2">Private</th>
+                    <th className="py-2 pr-2">Fresh Admission</th>
+                    <th className="py-2 pr-2">Total Enrollment</th>
+                    <th className="py-2 pr-2">Submitted At</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((r) => {
+                    const school = schoolById.get(r.school_id);
+                    return (
+                      <tr key={r.id} className="border-b border-brand-50">
+                        <td className="py-2 pr-2">{formatDisplayDate(r.report_date)}</td>
+                        <td className="py-2 pr-2 font-medium text-brand-900 print:text-black">
+                          {school?.school_name ?? "—"}
+                        </td>
+                        <td className="py-2 pr-2">{school?.emis_code ?? "—"}</td>
+                        <td className="py-2 pr-2">{r.dropout}</td>
+                        <td className="py-2 pr-2">{r.public_admission}</td>
+                        <td className="py-2 pr-2">{r.private_admission}</td>
+                        <td className="py-2 pr-2">{r.fresh_admission}</td>
+                        <td className="py-2 pr-2 font-semibold">{r.total_enrollment}</td>
+                        <td className="py-2 pr-2 text-gray-500">{formatDateTime(r.submitted_at)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </Card>
     </div>

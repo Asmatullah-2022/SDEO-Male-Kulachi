@@ -14,12 +14,12 @@ const toneClasses = {
 
 export function StatCard({ label, value, tone = "brand", icon }: StatCardProps) {
   return (
-    <div className={`rounded-2xl p-4 ${toneClasses[tone]}`}>
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-medium opacity-80">{label}</span>
-        {icon && <span className="text-xl">{icon}</span>}
+    <div className={`rounded-xl p-3 sm:rounded-2xl sm:p-4 ${toneClasses[tone]}`}>
+      <div className="flex items-start justify-between gap-1">
+        <span className="text-[11px] font-medium leading-tight opacity-80 sm:text-sm">{label}</span>
+        {icon && <span className="shrink-0 text-base sm:text-xl">{icon}</span>}
       </div>
-      <p className="mt-2 text-3xl font-bold">{value}</p>
+      <p className="mt-1 text-xl font-bold sm:mt-2 sm:text-3xl">{value}</p>
     </div>
   );
 }
