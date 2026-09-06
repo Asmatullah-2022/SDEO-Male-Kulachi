@@ -38,6 +38,51 @@ const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "no_mobile", label: "⚠ No Mobile Number" },
 ];
 
+/**
+ * The in-progress bulk reminder sequence, persisted to sessionStorage so it
+ * survives the admin leaving the tab for WhatsApp and coming back (Android
+ * Chrome frequently reloads the tab in that round trip, which would
+ * otherwise wipe plain React state). Only school IDs + position are stored
+ * — never row data — so the sequence always reflects live data on resume.
+ * `index === schoolIds.length` is the "all done" screen.
+ */
+interface BulkFlowState {
+  schoolIds: string[];
+  index: number;
+}
+
+const BULK_FLOW_STORAGE_KEY = "sdeo.monitorTable.bulkReminderFlow.v1";
+
+function loadPersistedBulkFlow(rows: MonitorRow[]): BulkFlowState | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(BULK_FLOW_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { schoolIds?: unknown; index?: unknown };
+    if (!Array.isArray(parsed.schoolIds) || typeof parsed.index !== "number") return null;
+
+    const rowIds = new Set(rows.map((r) => r.schoolId));
+    const schoolIds = parsed.schoolIds.filter((id): id is string => typeof id === "string" && rowIds.has(id));
+    if (schoolIds.length === 0) return null;
+
+    const index = Math.max(0, Math.min(parsed.index, schoolIds.length));
+    return { schoolIds, index };
+  } catch {
+    return null;
+  }
+}
+
+function persistBulkFlow(flow: BulkFlowState | null) {
+  if (typeof window === "undefined") return;
+  try {
+    if (flow) window.sessionStorage.setItem(BULK_FLOW_STORAGE_KEY, JSON.stringify(flow));
+    else window.sessionStorage.removeItem(BULK_FLOW_STORAGE_KEY);
+  } catch {
+    // sessionStorage can be unavailable (private browsing, quota) — the
+    // sequence just won't survive a reload in that case, nothing else breaks.
+  }
+}
+
 function isReminderEligible(row: MonitorRow): boolean {
   return !row.submitted && Boolean(toWhatsAppNumber(row.headteacherMobile));
 }
@@ -46,11 +91,32 @@ function isMissingMobile(row: MonitorRow): boolean {
   return !row.submitted && !toWhatsAppNumber(row.headteacherMobile);
 }
 
+/** Opens WhatsApp with the reminder pre-filled for one school. Never sends
+ * anything automatically — the Admin still has to press Send inside
+ * WhatsApp. Must be called synchronously from inside a click handler (no
+ * `await` before it) or mobile Chrome's pop-up blocker will kill it. */
+function openReminderWindow(row: MonitorRow, selectedDateDisplay: string) {
+  const waNumber = toWhatsAppNumber(row.headteacherMobile);
+  if (!waNumber) return;
+  const message = buildDailyReportReminderMessage(
+    { school_name: row.schoolName, emis_code: row.emisCode },
+    selectedDateDisplay
+  );
+  const url = buildWhatsAppDeepLink(message, waNumber);
+  window.open(url, "_blank");
+}
+
 export function MonitorTable({ rows, selectedDateDisplay, remindersEnabled }: Props) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterKey>("all");
   const [openedReminders, setOpenedReminders] = useState<Set<string>>(new Set());
-  const [bulkMessage, setBulkMessage] = useState<string | null>(null);
+  const [bulkConfirmQueue, setBulkConfirmQueue] = useState<MonitorRow[] | null>(null);
+  const [bulkFlow, setBulkFlow] = useState<BulkFlowState | null>(() =>
+    remindersEnabled ? loadPersistedBulkFlow(rows) : null
+  );
+  const [bulkDoneMessage, setBulkDoneMessage] = useState<string | null>(null);
+
+  const rowsById = new Map(rows.map((r) => [r.schoolId, r]));
 
   const query = search.trim().toLowerCase();
   const searched = query
@@ -74,53 +140,77 @@ export function MonitorTable({ rows, selectedDateDisplay, remindersEnabled }: Pr
     }
   });
 
-  /**
-   * Opens WhatsApp with the reminder pre-filled for one school. This only
-   * opens a chat — it never sends anything automatically; the Headteacher
-   * (or here, the Admin) still has to press Send inside WhatsApp. Returns
-   * whether the browser actually allowed the window to open, so bulk
-   * sending can detect and report pop-up blocking honestly.
-   */
-  function openReminder(row: MonitorRow): boolean {
-    const waNumber = toWhatsAppNumber(row.headteacherMobile);
-    if (!waNumber) return false;
-
-    const message = buildDailyReportReminderMessage(
-      { school_name: row.schoolName, emis_code: row.emisCode },
-      selectedDateDisplay
-    );
-    const url = buildWhatsAppDeepLink(message, waNumber);
-    const win = window.open(url, "_blank");
-    setOpenedReminders((prev) => new Set(prev).add(row.schoolId));
-    return Boolean(win);
+  function markOpened(schoolId: string) {
+    setOpenedReminders((prev) => new Set(prev).add(schoolId));
   }
 
-  function handleRemindAll() {
-    setBulkMessage(null);
+  /** Single-row button — unchanged behavior: opens directly, synchronously. */
+  function handleOpenSingleReminder(row: MonitorRow) {
+    openReminderWindow(row, selectedDateDisplay);
+    markOpened(row.schoolId);
+  }
+
+  /**
+   * The bulk entry point. This MUST stay synchronous end-to-end for the
+   * one-school case — no state updates or confirmation step in between the
+   * click and window.open() — otherwise mobile Chrome treats the popup as
+   * not-user-initiated and blocks it.
+   */
+  function handleRemindAllClick() {
+    setBulkDoneMessage(null);
     const eligible = filtered.filter(isReminderEligible);
     if (eligible.length === 0) return;
 
-    const confirmed = window.confirm(
-      "You are about to open WhatsApp reminders for all pending schools with valid mobile numbers. Continue?"
-    );
-    if (!confirmed) return;
+    if (eligible.length === 1) {
+      openReminderWindow(eligible[0], selectedDateDisplay);
+      markOpened(eligible[0].schoolId);
+      setBulkDoneMessage(
+        `Opened the WhatsApp reminder for ${eligible[0].schoolName}. No message was sent automatically — ` +
+          "the chat still needs you to press Send."
+      );
+      return;
+    }
 
-    let opened = 0;
-    let blocked = 0;
-    eligible.forEach((row) => {
-      if (openReminder(row)) opened += 1;
-      else blocked += 1;
-    });
+    // Multiple schools: mobile browsers block automatic multi-popup loops,
+    // so walk the admin through them one tap at a time instead.
+    setBulkConfirmQueue(eligible);
+  }
 
-    setBulkMessage(
-      blocked > 0
-        ? `Opened ${opened} of ${eligible.length} reminder${eligible.length === 1 ? "" : "s"}. Your browser ` +
-            `blocked ${blocked} additional pop-up${blocked === 1 ? "" : "s"} — allow pop-ups for this site to ` +
-            "open the rest, or use each school's 📱 WhatsApp Reminder button individually. No message was sent " +
-            "automatically; each chat still needs you to press Send."
-        : `Opened all ${opened} reminder${opened === 1 ? "" : "s"} in new tabs. No message was sent ` +
-            "automatically — each WhatsApp chat still needs you to press Send."
+  function handleStartSequentialReminders() {
+    if (!bulkConfirmQueue) return;
+    const flow: BulkFlowState = { schoolIds: bulkConfirmQueue.map((r) => r.schoolId), index: 0 };
+    setBulkFlow(flow);
+    persistBulkFlow(flow);
+    setBulkConfirmQueue(null);
+  }
+
+  function handleOpenCurrentInFlow() {
+    if (!bulkFlow) return;
+    const row = rowsById.get(bulkFlow.schoolIds[bulkFlow.index]);
+    if (!row) return;
+    openReminderWindow(row, selectedDateDisplay);
+    markOpened(row.schoolId);
+  }
+
+  function handleNextInFlow() {
+    if (!bulkFlow) return;
+    const next: BulkFlowState = { ...bulkFlow, index: bulkFlow.index + 1 };
+    setBulkFlow(next);
+    persistBulkFlow(next);
+  }
+
+  function handleFinishFlow() {
+    setBulkFlow(null);
+    persistBulkFlow(null);
+    setBulkDoneMessage(
+      "Finished the reminder session. No messages were sent automatically — each WhatsApp chat still needs " +
+        "you to press Send."
     );
+  }
+
+  function handleCancelFlow() {
+    setBulkFlow(null);
+    persistBulkFlow(null);
   }
 
   const eligibleInView = filtered.filter(isReminderEligible).length;
@@ -128,16 +218,35 @@ export function MonitorTable({ rows, selectedDateDisplay, remindersEnabled }: Pr
   return (
     <div className="space-y-3">
       {remindersEnabled && (
-        <button
-          type="button"
-          onClick={handleRemindAll}
-          disabled={eligibleInView === 0}
-          className="flex min-h-[48px] w-full items-center justify-center rounded-xl bg-[#25D366] px-4 py-3 text-sm font-semibold text-white hover:bg-[#1ebc59] disabled:cursor-not-allowed disabled:bg-gray-300"
-        >
-          📱 Remind All Pending Schools{eligibleInView > 0 ? ` (${eligibleInView})` : ""}
-        </button>
+        <>
+          {bulkFlow ? (
+            <SequentialReminderPanel
+              flow={bulkFlow}
+              rowsById={rowsById}
+              onOpen={handleOpenCurrentInFlow}
+              onNext={handleNextInFlow}
+              onFinish={handleFinishFlow}
+              onCancel={handleCancelFlow}
+            />
+          ) : bulkConfirmQueue ? (
+            <BulkConfirmPanel
+              count={bulkConfirmQueue.length}
+              onStart={handleStartSequentialReminders}
+              onCancel={() => setBulkConfirmQueue(null)}
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={handleRemindAllClick}
+              disabled={eligibleInView === 0}
+              className="flex min-h-[48px] w-full items-center justify-center rounded-xl bg-[#25D366] px-4 py-3 text-sm font-semibold text-white hover:bg-[#1ebc59] disabled:cursor-not-allowed disabled:bg-gray-300"
+            >
+              📱 Remind All Pending Schools{eligibleInView > 0 ? ` (${eligibleInView})` : ""}
+            </button>
+          )}
+          {bulkDoneMessage && <Alert type="success">{bulkDoneMessage}</Alert>}
+        </>
       )}
-      {bulkMessage && <Alert type="info">{bulkMessage}</Alert>}
 
       <Input
         placeholder="Search by School Name or EMIS Code..."
@@ -200,7 +309,7 @@ export function MonitorTable({ rows, selectedDateDisplay, remindersEnabled }: Pr
                     <ReminderButton
                       row={r}
                       opened={openedReminders.has(r.schoolId)}
-                      onOpen={() => openReminder(r)}
+                      onOpen={() => handleOpenSingleReminder(r)}
                       fullWidth
                     />
                   </div>
@@ -252,7 +361,7 @@ export function MonitorTable({ rows, selectedDateDisplay, remindersEnabled }: Pr
                           <ReminderButton
                             row={r}
                             opened={openedReminders.has(r.schoolId)}
-                            onOpen={() => openReminder(r)}
+                            onOpen={() => handleOpenSingleReminder(r)}
                           />
                         )}
                       </td>
@@ -262,6 +371,128 @@ export function MonitorTable({ rows, selectedDateDisplay, remindersEnabled }: Pr
               </tbody>
             </table>
           </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function BulkConfirmPanel({
+  count,
+  onStart,
+  onCancel,
+}: {
+  count: number;
+  onStart: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="rounded-xl border-2 border-brand-200 bg-brand-50 p-4">
+      <p className="text-sm font-semibold text-brand-900">
+        You have {count} pending schools with valid mobile numbers.
+      </p>
+      <p className="mt-1 text-sm text-gray-700">
+        WhatsApp reminders will be opened one at a time because mobile browsers block multiple automatic
+        pop-ups. Each chat will still need you to press Send yourself.
+      </p>
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+        <button
+          type="button"
+          onClick={onStart}
+          className="min-h-[48px] flex-1 rounded-xl bg-[#25D366] px-4 py-3 text-sm font-semibold text-white hover:bg-[#1ebc59]"
+        >
+          Start Reminders
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="min-h-[48px] rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-600 hover:bg-gray-50"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SequentialReminderPanel({
+  flow,
+  rowsById,
+  onOpen,
+  onNext,
+  onFinish,
+  onCancel,
+}: {
+  flow: BulkFlowState;
+  rowsById: Map<string, MonitorRow>;
+  onOpen: () => void;
+  onNext: () => void;
+  onFinish: () => void;
+  onCancel: () => void;
+}) {
+  const total = flow.schoolIds.length;
+  const isComplete = flow.index >= total;
+
+  return (
+    <div className="rounded-xl border-2 border-brand-200 bg-white p-4">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold text-gray-500">
+          {isComplete ? "Reminder session finished" : `Reminder ${flow.index + 1} of ${total}`}
+        </p>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="text-xs font-semibold text-gray-400 hover:text-gray-600"
+        >
+          Cancel Reminder Session
+        </button>
+      </div>
+
+      {isComplete ? (
+        <>
+          <p className="mt-3 text-sm font-semibold text-brand-900">✅ All reminders completed</p>
+          <p className="mt-1 text-xs text-gray-500">
+            No messages were sent automatically — each WhatsApp chat still needed you to press Send.
+          </p>
+          <button
+            type="button"
+            onClick={onFinish}
+            className="mt-3 min-h-[48px] w-full rounded-xl bg-[#25D366] px-4 py-3 text-sm font-semibold text-white hover:bg-[#1ebc59]"
+          >
+            Finish
+          </button>
+        </>
+      ) : (
+        <>
+          <div className="mt-2">
+            <p className="font-semibold text-brand-900">{rowsById.get(flow.schoolIds[flow.index])?.schoolName ?? "—"}</p>
+            <p className="text-xs text-gray-500">
+              EMIS: {rowsById.get(flow.schoolIds[flow.index])?.emisCode ?? "—"}
+            </p>
+            <p className="text-xs text-gray-500">
+              Headteacher: {rowsById.get(flow.schoolIds[flow.index])?.headteacherName ?? "Not assigned"}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={onOpen}
+            className="mt-3 min-h-[48px] w-full rounded-xl bg-[#25D366] px-4 py-3 text-sm font-semibold text-white hover:bg-[#1ebc59]"
+          >
+            📱 Open WhatsApp Reminder
+          </button>
+
+          <p className="mt-2 text-center text-[11px] text-gray-400">
+            Opening WhatsApp does not send anything — press Send inside the chat yourself.
+          </p>
+
+          <button
+            type="button"
+            onClick={onNext}
+            className="mt-3 min-h-[48px] w-full rounded-xl border-2 border-brand-600 bg-white px-4 py-3 text-sm font-semibold text-brand-700 hover:bg-brand-50"
+          >
+            {flow.index === total - 1 ? "Finish →" : "Next School →"}
+          </button>
         </>
       )}
     </div>
