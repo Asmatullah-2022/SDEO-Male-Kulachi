@@ -41,6 +41,7 @@ export interface DailyEnrollment {
   private_admission: number;
   fresh_admission: number;
   total_enrollment: number;
+  remarks: string | null;
   submitted_at: string;
   updated_at: string;
 }
@@ -51,4 +52,5 @@ export interface EnrollmentFormValues {
   private_admission: number;
   fresh_admission: number;
   total_enrollment: number;
+  remarks: string | null;
 }

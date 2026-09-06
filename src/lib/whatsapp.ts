@@ -16,7 +16,8 @@ export function buildWhatsAppMessage(
   report: Pick<
     DailyEnrollment,
     "report_date" | "dropout" | "public_admission" | "private_admission" | "fresh_admission" | "total_enrollment"
-  >,
+  > &
+    Partial<Pick<DailyEnrollment, "remarks">>,
   school: Pick<School, "school_name" | "emis_code">,
   headteacherName: string
 ): string {
@@ -34,6 +35,7 @@ export function buildWhatsAppMessage(
     `🆕 Fresh Admission: ${report.fresh_admission}`,
     "",
     `📚 Total Enrollment: ${report.total_enrollment}`,
+    ...(report.remarks ? ["", `📝 Remarks: ${report.remarks}`] : []),
     "",
     "━━━━━━━━━━━━━━━━",
     "",

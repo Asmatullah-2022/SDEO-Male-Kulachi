@@ -11,7 +11,7 @@ export const enrollmentSchema = z.object({
   public_admission: nonNegativeInt,
   private_admission: nonNegativeInt,
   fresh_admission: nonNegativeInt,
-  total_enrollment: nonNegativeInt,
+  remarks: z.string().trim().max(500, "Remarks must be 500 characters or fewer").optional().or(z.literal("")),
 });
 
 export type EnrollmentInput = z.infer<typeof enrollmentSchema>;

@@ -4,6 +4,8 @@ import type { Profile, School } from "@/lib/types";
 export interface CurrentUser {
   profile: Profile;
   school: School | null;
+  /** From the user's own auth session — no service role needed to read one's own email. */
+  email: string | null;
 }
 
 export async function getCurrentUser(): Promise<CurrentUser | null> {
@@ -32,5 +34,5 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     school = data ?? null;
   }
 
-  return { profile, school };
+  return { profile, school, email: user.email ?? null };
 }
