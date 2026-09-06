@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { clearAllCache } from "@/lib/adminCache";
 
 export function SignOutButton() {
   const router = useRouter();
@@ -12,6 +13,10 @@ export function SignOutButton() {
     setLoading(true);
     const supabase = createClient();
     await supabase.auth.signOut();
+    // Wipes this tab's cached profile/school/reports — without this, the
+    // next account to sign in on this device would see this account's
+    // cached dashboard data until a hard refresh. See adminCache.ts.
+    clearAllCache();
     router.replace("/login");
     router.refresh();
   }
