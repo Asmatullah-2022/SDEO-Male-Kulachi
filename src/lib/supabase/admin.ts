@@ -30,10 +30,12 @@ export class SupabaseAdminKeyMismatchError extends Error {
 }
 
 /**
- * TEMPORARY DIAGNOSTIC — logs whether the required env vars are present in
- * *this specific running function invocation*, plus which Vercel
- * environment/deployment served the request. NEVER logs the actual secret
- * value — only `true`/`false` and its character length.
+ * Logs whether the required env vars are present in *this specific
+ * running function invocation*, plus which Vercel environment/deployment
+ * served the request. NEVER logs the actual secret value — only
+ * `true`/`false` and its character length. Cheap and side-effect-free
+ * enough to keep permanently; it's the fastest way to tell a genuine
+ * missing-config incident apart from a stale/mismatched deployment.
  */
 export function logEnvPresence(context: string) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
