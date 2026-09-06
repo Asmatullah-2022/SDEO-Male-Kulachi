@@ -86,6 +86,10 @@ create table if not exists public.daily_enrollment (
 
 comment on table public.daily_enrollment is 'Daily enrollment figures submitted by each school headteacher';
 
+-- Idempotent: adds the optional headteacher remarks field without touching
+-- any existing row or the table's existing constraints/policies.
+alter table public.daily_enrollment add column if not exists remarks text;
+
 create index if not exists daily_enrollment_report_date_idx on public.daily_enrollment (report_date);
 create index if not exists daily_enrollment_school_id_idx on public.daily_enrollment (school_id);
 
