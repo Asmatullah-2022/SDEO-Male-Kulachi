@@ -4,7 +4,7 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { enrollmentSchema } from "@/lib/validation";
-import { buildWhatsAppDeepLink, buildWhatsAppMessage } from "@/lib/whatsapp";
+import { buildGroupShareLink, buildWhatsAppMessage } from "@/lib/whatsapp";
 import { formatDisplayDate } from "@/lib/date";
 import type { DailyEnrollment, School } from "@/lib/types";
 import { Card } from "@/components/Card";
@@ -15,6 +15,7 @@ import { Alert } from "@/components/Alert";
 interface Props {
   school: School;
   userId: string;
+  headteacherName: string;
   today: string;
   existingReport: DailyEnrollment | null;
 }
@@ -27,7 +28,7 @@ const FIELDS = [
   { key: "total_enrollment" as const, label: "Total Enrollment" },
 ];
 
-export function SubmitReportForm({ school, userId, today, existingReport }: Props) {
+export function SubmitReportForm({ school, userId, headteacherName, today, existingReport }: Props) {
   const router = useRouter();
   const [values, setValues] = useState({
     dropout: existingReport ? String(existingReport.dropout) : "",
@@ -91,8 +92,8 @@ export function SubmitReportForm({ school, userId, today, existingReport }: Prop
   }
 
   if (savedReport) {
-    const message = buildWhatsAppMessage(savedReport, school);
-    const link = buildWhatsAppDeepLink(message);
+    const message = buildWhatsAppMessage(savedReport, school, headteacherName);
+    const link = buildGroupShareLink(message);
 
     return (
       <div className="flex flex-col gap-4">
@@ -116,7 +117,7 @@ export function SubmitReportForm({ school, userId, today, existingReport }: Prop
 
         <a href={link} target="_blank" rel="noopener noreferrer">
           <Button fullWidth className="bg-[#25D366] hover:bg-[#1ebc59]">
-            💬 Send to Official WhatsApp
+            💬 Share Report to SDEO Group
           </Button>
         </a>
 
