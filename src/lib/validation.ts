@@ -30,6 +30,16 @@ export const schoolSchema = z.object({
   status: z.enum(["active", "inactive"]),
 });
 
+export const publicEnrollmentSubmitSchema = z.object({
+  emis_code: z.string().trim().min(1, "Select a school first"),
+  dropout: nonNegativeInt,
+  public_admission: nonNegativeInt,
+  private_admission: nonNegativeInt,
+  fresh_admission: nonNegativeInt,
+});
+
+export type PublicEnrollmentSubmitInput = z.infer<typeof publicEnrollmentSubmitSchema>;
+
 export const headteacherSchema = z.object({
   full_name: z.string().trim().min(2, "Full name is required"),
   email: z.string().trim().email("Enter a valid email address"),

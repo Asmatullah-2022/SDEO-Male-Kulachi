@@ -215,6 +215,23 @@ create policy "enrollment_delete_admin_only"
   using (public.is_admin());
 
 -- ---------------------------------------------------------------------
+-- Enable Realtime so the Admin Dashboard can live-refresh when a school
+-- submits via the public /enrollment portal (or the headteacher flow).
+-- Idempotent: safe to re-run even if the table is already in the publication.
+-- ---------------------------------------------------------------------
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'daily_enrollment'
+  ) then
+    alter publication supabase_realtime add table public.daily_enrollment;
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------
 -- Auto-create a profile row whenever a new auth user signs up
 -- (Admin normally creates headteacher accounts via Supabase Auth Admin API
 --  / dashboard, then this trigger seeds a matching profile row.)
