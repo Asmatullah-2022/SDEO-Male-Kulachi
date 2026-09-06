@@ -181,7 +181,12 @@ export function OverviewClient() {
 
   return (
     <div className="mx-auto w-full max-w-5xl flex-1 space-y-6 px-4 py-6">
-      <RealtimeRefresher />
+      <RealtimeRefresher
+        onChange={() => {
+          enrollmentCache.refresh();
+          trendCache.refresh();
+        }}
+      />
       {loadError && <Alert type="error">{loadError}</Alert>}
 
       <Card>

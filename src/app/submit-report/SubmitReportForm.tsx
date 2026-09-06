@@ -89,6 +89,9 @@ export function SubmitReportForm() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    // Guards against a double-tap firing two overlapping submits before the
+    // button's disabled state has painted — common on mobile touchscreens.
+    if (submitting) return;
     setServerError(null);
 
     const result = enrollmentSchema.safeParse(values);

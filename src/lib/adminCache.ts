@@ -114,7 +114,14 @@ export function useAdminCache<T>(key: string, fetcher: () => Promise<T>) {
   return {
     data: entry.data,
     error: entry.error,
-    loading: entry.data === null && entry.promise !== null,
+    // Not "promise !== null" — on a component's very first render, the
+    // fetch is kicked off by the effect above, which only runs *after*
+    // that render commits. Checking the promise field here would read
+    // false for that one render (no promise exists yet, even though a
+    // fetch is about to start), letting a consumer briefly render its
+    // empty/no-data UI before the real request even begins. Absence of
+    // both data and error is the correct signal that a result is pending.
+    loading: entry.data === null && entry.error === null,
     refresh,
     mutate,
   };
