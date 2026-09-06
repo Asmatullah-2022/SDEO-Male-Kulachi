@@ -22,10 +22,17 @@ async function requireAdmin() {
 // ----------------------------------------------------------------------------
 // The real GET handler (list users, below this block, commented out) is
 // swapped out for a bare env-var probe while we track down why
-// SUPABASE_SERVICE_ROLE_KEY isn't reaching the deployed function. This
-// intentionally skips auth so it can be curled/opened directly with no
-// session cookie needed. It NEVER returns the key's value — only whether
-// it's present and how many characters long it is.
+// SUPABASE_SERVICE_ROLE_KEY isn't reaching the deployed function.
+//
+// This step lists only the NAMES of env vars containing "SUPABASE" that
+// this running function can see — never any value. Names are not secrets;
+// this is purely to catch a typo, stray character, or naming mismatch in
+// how the variable was saved in Vercel (e.g. a trailing space baked into
+// the key name itself, "SUPABASE_SERVICE_ROLE" without "_KEY", accidental
+// duplication, wrong casing, etc).
+//
+// Intentionally skips auth so it can be curled/opened directly with no
+// session cookie needed.
 //
 // Side effect: the Users page's "Refresh" button will show this JSON
 // instead of the real user list until this is reverted. The initial page
@@ -36,10 +43,8 @@ async function requireAdmin() {
 export async function GET() {
   logEnvPresence("GET /api/admin/headteachers (diagnostic mode)");
   return NextResponse.json({
-    present: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
-    length: process.env.SUPABASE_SERVICE_ROLE_KEY?.length || 0,
+    supabaseKeys: Object.keys(process.env).filter((key) => key.toUpperCase().includes("SUPABASE")),
     vercelEnv: process.env.VERCEL_ENV,
-    nodeEnv: process.env.NODE_ENV,
   });
 }
 
