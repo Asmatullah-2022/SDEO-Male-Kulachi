@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAdminClient, logEnvPresence } from "@/lib/supabase/admin";
 import { describeAdminError } from "@/lib/supabase/admin-error";
 import { getUsersWithEmail } from "@/lib/services/users";
 import { headteacherSchema } from "@/lib/validation";
@@ -17,6 +17,7 @@ async function requireAdmin() {
 }
 
 export async function GET() {
+  logEnvPresence("GET /api/admin/headteachers");
   const admin = await requireAdmin();
   if (!admin) {
     return NextResponse.json({ error: "Not authorized." }, { status: 403 });
@@ -34,6 +35,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  logEnvPresence("POST /api/admin/headteachers");
   const admin = await requireAdmin();
   if (!admin) {
     return NextResponse.json({ error: "Not authorized." }, { status: 403 });

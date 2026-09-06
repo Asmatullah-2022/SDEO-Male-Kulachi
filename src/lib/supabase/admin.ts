@@ -16,6 +16,36 @@ export class SupabaseAdminConfigError extends Error {
 }
 
 /**
+ * TEMPORARY DIAGNOSTIC — logs whether the required env vars are present in
+ * *this specific running function invocation*, plus which Vercel
+ * environment/deployment served the request. NEVER logs the actual secret
+ * value — only `true`/`false` and its character length.
+ *
+ * Also included: `VERCEL_ENV` ("production" | "preview" | "development")
+ * and `VERCEL_URL`, both auto-injected by Vercel and non-sensitive. These
+ * are the fastest way to confirm whether a request is actually landing on
+ * the deployment/environment you think it is — a stale deployment (created
+ * before an env var was added or changed) will NOT pick up the new value
+ * until a fresh deployment runs, even though the dashboard shows it saved.
+ */
+export function logEnvPresence(context: string) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  console.log(
+    `[env-check:${context}] ` +
+      `NEXT_PUBLIC_SUPABASE_URL(present=${Boolean(url)},len=${url?.length ?? 0}) ` +
+      `NEXT_PUBLIC_SUPABASE_ANON_KEY(present=${Boolean(anonKey)},len=${anonKey?.length ?? 0}) ` +
+      `SUPABASE_SERVICE_ROLE_KEY(present=${Boolean(serviceRoleKey)},len=${serviceRoleKey?.length ?? 0}) ` +
+      `VERCEL_ENV=${process.env.VERCEL_ENV ?? "n/a"} ` +
+      `NODE_ENV=${process.env.NODE_ENV ?? "n/a"} ` +
+      `VERCEL_URL=${process.env.VERCEL_URL ?? "n/a"} ` +
+      `VERCEL_GIT_COMMIT_SHA=${process.env.VERCEL_GIT_COMMIT_SHA ?? "n/a"}`
+  );
+}
+
+/**
  * Server-only Supabase client using the service role key. Never import this
  * file from a Client Component — it bypasses Row Level Security entirely.
  */
