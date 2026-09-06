@@ -1,26 +1,42 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { DailyEnrollment } from "@/lib/types";
-import { formatDateTime, formatDisplayDate } from "@/lib/date";
+import { formatDateTime, formatDisplayDate, todayISO } from "@/lib/date";
+import { useAdminCache } from "@/lib/adminCache";
+import { fetchMyProfile, fetchMyReports, type MyProfileData } from "@/lib/headteacherCache";
 import { Card } from "@/components/Card";
 import { Input } from "@/components/Input";
 import { Button } from "@/components/Button";
+import { Alert } from "@/components/Alert";
 import { EmptyState } from "@/components/EmptyState";
-
-interface Props {
-  reports: DailyEnrollment[];
-  today: string;
-}
+import { Skeleton } from "@/components/Skeleton";
 
 const PAGE_SIZE = 10;
 
-export function HistoryExplorer({ reports, today }: Props) {
+/**
+ * Reads the same "myProfile"/"myReports" cache the Home and Submit tabs
+ * share (src/lib/headteacherCache.ts), so opening History after either of
+ * those tabs is instant — the reports list is already in memory.
+ */
+export function HistoryExplorer() {
+  const router = useRouter();
+  const profileCache = useAdminCache<MyProfileData>("myProfile", fetchMyProfile);
+  const reportsCache = useAdminCache<DailyEnrollment[]>("myReports", fetchMyReports);
+  const today = todayISO();
+
+  useEffect(() => {
+    if (profileCache.data?.profile.role === "admin") router.replace("/admin");
+  }, [profileCache.data, router]);
+
   const [dateFilter, setDateFilter] = useState("");
   const [monthFilter, setMonthFilter] = useState("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+
+  const reports = useMemo(() => reportsCache.data ?? [], [reportsCache.data]);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -45,6 +61,37 @@ export function HistoryExplorer({ reports, today }: Props) {
     setMonthFilter("");
     setSearch("");
     setPage(1);
+  }
+
+  const loadError = profileCache.error || reportsCache.error;
+  if (loadError) {
+    return <Alert type="error">{loadError}</Alert>;
+  }
+
+  const loading = (profileCache.loading && !profileCache.data) || (reportsCache.loading && !reportsCache.data);
+
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        <Skeleton className="h-40 w-full" />
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-24 w-full" />
+      </div>
+    );
+  }
+
+  if (!profileCache.data?.school) {
+    return <EmptyState icon="🏫" title="No school assigned" description="Contact the SDEO office for assistance." />;
+  }
+
+  if (reports.length === 0) {
+    return (
+      <EmptyState
+        icon="📊"
+        title="No submissions yet"
+        description="Your submitted daily enrollment reports will appear here."
+      />
+    );
   }
 
   return (
