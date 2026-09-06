@@ -1,3 +1,5 @@
+import { memo } from "react";
+
 interface StatCardProps {
   label: string;
   value: string | number;
@@ -12,7 +14,7 @@ const toneClasses = {
   blue: "bg-blue-50 text-blue-800",
 };
 
-export function StatCard({ label, value, tone = "brand", icon }: StatCardProps) {
+export const StatCard = memo(function StatCard({ label, value, tone = "brand", icon }: StatCardProps) {
   return (
     <div className={`rounded-xl p-3 sm:rounded-2xl sm:p-4 ${toneClasses[tone]}`}>
       <div className="flex items-start justify-between gap-1">
@@ -22,4 +24,4 @@ export function StatCard({ label, value, tone = "brand", icon }: StatCardProps) 
       <p className="mt-1 text-xl font-bold sm:mt-2 sm:text-3xl">{value}</p>
     </div>
   );
-}
+});

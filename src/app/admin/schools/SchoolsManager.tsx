@@ -4,6 +4,7 @@ import { FormEvent, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { schoolSchema } from "@/lib/validation";
 import { addSchool, deleteSchool, getSchools, updateSchool } from "@/lib/services/schools";
+import { useAdminCache } from "@/lib/adminCache";
 import type { School } from "@/lib/types";
 import { Card } from "@/components/Card";
 import { Input } from "@/components/Input";
@@ -11,7 +12,7 @@ import { Select } from "@/components/Select";
 import { Button } from "@/components/Button";
 import { Alert } from "@/components/Alert";
 import { EmptyState } from "@/components/EmptyState";
-import { Spinner } from "@/components/Spinner";
+import { TableSkeleton } from "@/components/Skeleton";
 
 const emptyForm = {
   school_name: "",
@@ -22,18 +23,19 @@ const emptyForm = {
   status: "active" as "active" | "inactive",
 };
 
-interface Props {
-  initialSchools: School[];
-  initialError?: string | null;
-}
-
-export function SchoolsManager({ initialSchools, initialError = null }: Props) {
-  const [schools, setSchools] = useState<School[]>(initialSchools);
+/**
+ * Reads/writes the same "schools" cache key the Overview and Users tabs
+ * share (see src/lib/adminCache.ts) — whichever tab is opened first fetches
+ * the list once, and the other two reuse it instantly with no extra query.
+ */
+export function SchoolsManager() {
+  const cache = useAdminCache<School[]>("schools", () => getSchools(createClient()));
+  const schools = cache.data ?? [];
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [error, setError] = useState<string | null>(initialError);
+  const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -50,9 +52,7 @@ export function SchoolsManager({ initialSchools, initialError = null }: Props) {
     setRefreshing(true);
     setError(null);
     try {
-      const supabase = createClient();
-      const fresh = await getSchools(supabase);
-      setSchools(fresh);
+      await cache.refresh();
     } catch {
       setError("Could not refresh the school list. Please check your connection and try again.");
     } finally {
@@ -109,11 +109,13 @@ export function SchoolsManager({ initialSchools, initialError = null }: Props) {
     try {
       if (editingId) {
         const updated = await updateSchool(supabase, editingId, payload);
-        setSchools((prev) => prev.map((s) => (s.id === editingId ? updated : s)));
+        cache.mutate((prev) => (prev ?? []).map((s) => (s.id === editingId ? updated : s)));
         setSuccess("School updated successfully.");
       } else {
         const created = await addSchool(supabase, payload);
-        setSchools((prev) => [...prev, created].sort((a, b) => a.school_name.localeCompare(b.school_name)));
+        cache.mutate((prev) =>
+          [...(prev ?? []), created].sort((a, b) => a.school_name.localeCompare(b.school_name))
+        );
         setSuccess("School added successfully.");
       }
       resetForm();
@@ -133,7 +135,7 @@ export function SchoolsManager({ initialSchools, initialError = null }: Props) {
     const supabase = createClient();
     try {
       await deleteSchool(supabase, id);
-      setSchools((prev) => prev.filter((s) => s.id !== id));
+      cache.mutate((prev) => (prev ?? []).filter((s) => s.id !== id));
     } catch {
       setError("Could not delete school. It may have existing enrollment reports or a headteacher assigned.");
     }
@@ -141,7 +143,7 @@ export function SchoolsManager({ initialSchools, initialError = null }: Props) {
 
   return (
     <div className="space-y-6">
-      {error && <Alert type="error">{error}</Alert>}
+      {(error || cache.error) && <Alert type="error">{error ?? cache.error}</Alert>}
       {success && <Alert type="success">{success}</Alert>}
 
       {/* Search + stats — shown first so admins search before accidentally re-adding an existing school */}
@@ -175,8 +177,8 @@ export function SchoolsManager({ initialSchools, initialError = null }: Props) {
 
       {/* School list */}
       <Card>
-        {refreshing ? (
-          <Spinner label="Refreshing schools..." />
+        {cache.loading && schools.length === 0 ? (
+          <TableSkeleton rows={5} />
         ) : filtered.length === 0 ? (
           schools.length === 0 ? (
             <EmptyState

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import { Input } from "@/components/Input";
 import { EmptyState } from "@/components/EmptyState";
 import { Alert } from "@/components/Alert";
@@ -106,7 +106,7 @@ function openReminderWindow(row: MonitorRow, selectedDateDisplay: string) {
   window.open(url, "_blank");
 }
 
-export function MonitorTable({ rows, selectedDateDisplay, remindersEnabled }: Props) {
+export const MonitorTable = memo(function MonitorTable({ rows, selectedDateDisplay, remindersEnabled }: Props) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterKey>("all");
   const [openedReminders, setOpenedReminders] = useState<Set<string>>(new Set());
@@ -375,7 +375,7 @@ export function MonitorTable({ rows, selectedDateDisplay, remindersEnabled }: Pr
       )}
     </div>
   );
-}
+});
 
 function BulkConfirmPanel({
   count,
