@@ -7,7 +7,7 @@ import { Card } from "@/components/Card";
 import { Alert } from "@/components/Alert";
 import { Button } from "@/components/Button";
 import { TableSkeleton } from "@/components/Skeleton";
-import type { DailyEnrollment, School } from "@/lib/types";
+import type { DailyEnrollment, HeadteacherUser, School } from "@/lib/types";
 import { ReportsExplorer } from "./ReportsExplorer";
 
 async function fetchReports(): Promise<DailyEnrollment[]> {
@@ -21,20 +21,33 @@ async function fetchReports(): Promise<DailyEnrollment[]> {
   return (data as DailyEnrollment[]) ?? [];
 }
 
+async function fetchHeadteachers(): Promise<HeadteacherUser[]> {
+  const res = await fetch("/api/admin/headteachers");
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? "Could not load headteacher names.");
+  return json.users as HeadteacherUser[];
+}
+
 /**
  * Reports data is deliberately NOT prefetched in the background (unlike
  * Schools/Users) — it's the least-visited tab and the heaviest query (up to
  * 1000 rows), so it only loads the first time an admin actually opens it.
  * Once loaded it's cached the same as every other tab: instant on repeat
- * visits, refreshed only by the button below. Schools reuses the same
- * "schools" cache key Overview/Schools/Users already share.
+ * visits, refreshed only by the button below. Schools and headteacher
+ * names reuse the exact same "schools"/"adminUsers" cache keys Overview
+ * and Users already share — usually already warm by the time this tab is
+ * opened, so no extra query at all.
  */
 export function ReportsClient() {
   const reportsCache = useAdminCache<DailyEnrollment[]>("reports", fetchReports);
   const schoolsCache = useAdminCache<School[]>("schools", () => getSchools(createClient()));
+  const usersCache = useAdminCache<HeadteacherUser[]>("adminUsers", fetchHeadteachers);
 
-  const loading = (reportsCache.loading && !reportsCache.data) || (schoolsCache.loading && !schoolsCache.data);
-  const error = reportsCache.error || schoolsCache.error;
+  const loading =
+    (reportsCache.loading && !reportsCache.data) ||
+    (schoolsCache.loading && !schoolsCache.data) ||
+    (usersCache.loading && !usersCache.data);
+  const error = reportsCache.error || schoolsCache.error || usersCache.error;
 
   if (loading) {
     return (
@@ -55,12 +68,17 @@ export function ReportsClient() {
           onClick={() => {
             reportsCache.refresh();
             schoolsCache.refresh();
+            usersCache.refresh();
           }}
         >
           ↻ Refresh
         </Button>
       </div>
-      <ReportsExplorer reports={reportsCache.data ?? []} schools={schoolsCache.data ?? []} />
+      <ReportsExplorer
+        reports={reportsCache.data ?? []}
+        schools={schoolsCache.data ?? []}
+        users={usersCache.data ?? []}
+      />
     </div>
   );
 }
