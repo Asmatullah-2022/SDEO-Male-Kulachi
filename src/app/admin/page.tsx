@@ -91,11 +91,13 @@ export default async function AdminOverviewPage({
 
   const monitorRows: MonitorRow[] = allSchools.map((s) => {
     const report = reportBySchoolId.get(s.id);
+    const headteacher = headteacherBySchoolId.get(s.id);
     return {
       schoolId: s.id,
       schoolName: s.school_name,
       emisCode: s.emis_code,
-      headteacherName: headteacherBySchoolId.get(s.id)?.name ?? null,
+      headteacherName: headteacher?.name ?? null,
+      headteacherMobile: headteacher?.mobile ?? null,
       submitted: Boolean(report),
       dropout: report?.dropout ?? 0,
       publicAdmission: report?.public_admission ?? 0,
@@ -171,7 +173,11 @@ export default async function AdminOverviewPage({
           {monitorRows.length === 0 ? (
             <EmptyState icon="🏫" title="No schools registered yet" />
           ) : (
-            <MonitorTable rows={monitorRows} />
+            <MonitorTable
+              rows={monitorRows}
+              selectedDateDisplay={formatDisplayDate(selectedDate)}
+              remindersEnabled={isToday}
+            />
           )}
         </Card>
 

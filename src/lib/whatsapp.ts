@@ -108,6 +108,35 @@ export function buildAbsenceReminderMessage(): string {
 }
 
 /**
+ * The reminder message sent from the Today's Submission Monitor for one
+ * specific not-yet-submitted school. Includes the school's own details and
+ * the currently selected date. Text and line breaks are fixed by SDEO
+ * office policy — do not reword. `dateDisplay` should already be formatted
+ * (e.g. via formatDisplayDate), not a raw ISO string.
+ */
+export function buildDailyReportReminderMessage(
+  school: Pick<School, "school_name" | "emis_code">,
+  dateDisplay: string
+): string {
+  return (
+    "السلام علیکم محترم ہیڈ ٹیچر،\n" +
+    "\n" +
+    "آپ کے سکول کی آج کی Daily Enrollment Report ابھی تک SDEO Kulachi Enrollment Monitoring System میں جمع نہیں ہوئی۔\n" +
+    "\n" +
+    "براہ کرم جلد از جلد اپنی رپورٹ درج اور Submit کریں۔\n" +
+    "\n" +
+    `School: ${school.school_name}\n` +
+    `EMIS Code: ${school.emis_code}\n` +
+    `Date: ${dateDisplay}\n` +
+    "\n" +
+    "شکریہ\n" +
+    "\n" +
+    "SDEO (Male) Kulachi\n" +
+    "District Dera Ismail Khan"
+  );
+}
+
+/**
  * Best-effort normalization of a Pakistani mobile number (as typically
  * entered by hand — "0300-1234567", "03001234567", "+923001234567", etc.)
  * into the digits-only international format wa.me requires. Returns null

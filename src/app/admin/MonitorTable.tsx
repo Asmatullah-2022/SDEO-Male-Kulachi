@@ -3,12 +3,15 @@
 import { useState } from "react";
 import { Input } from "@/components/Input";
 import { EmptyState } from "@/components/EmptyState";
+import { Alert } from "@/components/Alert";
+import { buildDailyReportReminderMessage, buildWhatsAppDeepLink, toWhatsAppNumber } from "@/lib/whatsapp";
 
 export interface MonitorRow {
   schoolId: string;
   schoolName: string;
   emisCode: string;
   headteacherName: string | null;
+  headteacherMobile: string | null;
   submitted: boolean;
   dropout: number;
   publicAdmission: number;
@@ -17,30 +20,154 @@ export interface MonitorRow {
   totalEnrollment: number;
 }
 
-export function MonitorTable({ rows }: { rows: MonitorRow[] }) {
+interface Props {
+  rows: MonitorRow[];
+  /** The currently selected date, already formatted for display (DD-MM-YYYY). */
+  selectedDateDisplay: string;
+  /** Reminders only make sense for today — a past date's "today" wording would be misleading. */
+  remindersEnabled: boolean;
+}
+
+type FilterKey = "all" | "submitted" | "not_submitted" | "reminder_available" | "no_mobile";
+
+const FILTERS: { key: FilterKey; label: string }[] = [
+  { key: "all", label: "All Schools" },
+  { key: "submitted", label: "✓ Submitted" },
+  { key: "not_submitted", label: "✕ Not Submitted" },
+  { key: "reminder_available", label: "📱 Reminder Available" },
+  { key: "no_mobile", label: "⚠ No Mobile Number" },
+];
+
+function isReminderEligible(row: MonitorRow): boolean {
+  return !row.submitted && Boolean(toWhatsAppNumber(row.headteacherMobile));
+}
+
+function isMissingMobile(row: MonitorRow): boolean {
+  return !row.submitted && !toWhatsAppNumber(row.headteacherMobile);
+}
+
+export function MonitorTable({ rows, selectedDateDisplay, remindersEnabled }: Props) {
   const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<FilterKey>("all");
+  const [openedReminders, setOpenedReminders] = useState<Set<string>>(new Set());
+  const [bulkMessage, setBulkMessage] = useState<string | null>(null);
 
   const query = search.trim().toLowerCase();
-  const filtered = query
+  const searched = query
     ? rows.filter(
         (r) => r.schoolName.toLowerCase().includes(query) || r.emisCode.toLowerCase().includes(query)
       )
     : rows;
 
+  const filtered = searched.filter((r) => {
+    switch (filter) {
+      case "submitted":
+        return r.submitted;
+      case "not_submitted":
+        return !r.submitted;
+      case "reminder_available":
+        return isReminderEligible(r);
+      case "no_mobile":
+        return isMissingMobile(r);
+      default:
+        return true;
+    }
+  });
+
+  /**
+   * Opens WhatsApp with the reminder pre-filled for one school. This only
+   * opens a chat — it never sends anything automatically; the Headteacher
+   * (or here, the Admin) still has to press Send inside WhatsApp. Returns
+   * whether the browser actually allowed the window to open, so bulk
+   * sending can detect and report pop-up blocking honestly.
+   */
+  function openReminder(row: MonitorRow): boolean {
+    const waNumber = toWhatsAppNumber(row.headteacherMobile);
+    if (!waNumber) return false;
+
+    const message = buildDailyReportReminderMessage(
+      { school_name: row.schoolName, emis_code: row.emisCode },
+      selectedDateDisplay
+    );
+    const url = buildWhatsAppDeepLink(message, waNumber);
+    const win = window.open(url, "_blank");
+    setOpenedReminders((prev) => new Set(prev).add(row.schoolId));
+    return Boolean(win);
+  }
+
+  function handleRemindAll() {
+    setBulkMessage(null);
+    const eligible = filtered.filter(isReminderEligible);
+    if (eligible.length === 0) return;
+
+    const confirmed = window.confirm(
+      "You are about to open WhatsApp reminders for all pending schools with valid mobile numbers. Continue?"
+    );
+    if (!confirmed) return;
+
+    let opened = 0;
+    let blocked = 0;
+    eligible.forEach((row) => {
+      if (openReminder(row)) opened += 1;
+      else blocked += 1;
+    });
+
+    setBulkMessage(
+      blocked > 0
+        ? `Opened ${opened} of ${eligible.length} reminder${eligible.length === 1 ? "" : "s"}. Your browser ` +
+            `blocked ${blocked} additional pop-up${blocked === 1 ? "" : "s"} — allow pop-ups for this site to ` +
+            "open the rest, or use each school's 📱 WhatsApp Reminder button individually. No message was sent " +
+            "automatically; each chat still needs you to press Send."
+        : `Opened all ${opened} reminder${opened === 1 ? "" : "s"} in new tabs. No message was sent ` +
+            "automatically — each WhatsApp chat still needs you to press Send."
+    );
+  }
+
+  const eligibleInView = filtered.filter(isReminderEligible).length;
+
   return (
     <div className="space-y-3">
+      {remindersEnabled && (
+        <button
+          type="button"
+          onClick={handleRemindAll}
+          disabled={eligibleInView === 0}
+          className="flex min-h-[48px] w-full items-center justify-center rounded-xl bg-[#25D366] px-4 py-3 text-sm font-semibold text-white hover:bg-[#1ebc59] disabled:cursor-not-allowed disabled:bg-gray-300"
+        >
+          📱 Remind All Pending Schools{eligibleInView > 0 ? ` (${eligibleInView})` : ""}
+        </button>
+      )}
+      {bulkMessage && <Alert type="info">{bulkMessage}</Alert>}
+
       <Input
         placeholder="Search by School Name or EMIS Code..."
         value={search}
         onChange={(e) => setSearch(e.target.value)}
       />
 
+      <div className="flex flex-wrap gap-2">
+        {FILTERS.map((f) => (
+          <button
+            key={f.key}
+            type="button"
+            onClick={() => setFilter(f.key)}
+            className={`min-h-[36px] rounded-full border px-3 py-1.5 text-xs font-semibold ${
+              filter === f.key
+                ? "border-brand-600 bg-brand-600 text-white"
+                : "border-brand-200 bg-white text-brand-700 hover:bg-brand-50"
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
       {filtered.length === 0 ? (
-        <EmptyState icon="🔍" title="No schools match your search" />
+        <EmptyState icon="🔍" title="No schools match your search or filter" />
       ) : (
         <>
-          {/* Mobile card list — avoids horizontal scrolling on small screens */}
-          <div className="divide-y divide-brand-50 sm:hidden">
+          {/* Mobile card list (below 768px) — avoids horizontal scrolling on small screens */}
+          <div className="divide-y divide-brand-50 md:hidden">
             {filtered.map((r) => (
               <div key={r.schoolId} className="py-3">
                 <div className="flex items-start justify-between gap-2">
@@ -68,13 +195,23 @@ export function MonitorTable({ rows }: { rows: MonitorRow[] }) {
                     Total Enrollment: {r.totalEnrollment}
                   </p>
                 )}
+                {remindersEnabled && !r.submitted && (
+                  <div className="mt-3">
+                    <ReminderButton
+                      row={r}
+                      opened={openedReminders.has(r.schoolId)}
+                      onOpen={() => openReminder(r)}
+                      fullWidth
+                    />
+                  </div>
+                )}
               </div>
             ))}
           </div>
 
-          {/* Desktop/tablet table */}
-          <div className="hidden overflow-x-auto sm:block">
-            <table className="w-full min-w-[820px] text-left text-sm">
+          {/* Tablet/desktop table (768px and up) */}
+          <div className="hidden overflow-x-auto md:block">
+            <table className="w-full min-w-[900px] text-left text-sm">
               <thead>
                 <tr className="border-b border-brand-100 text-gray-500">
                   <th className="py-2 pr-2">School Name</th>
@@ -86,6 +223,7 @@ export function MonitorTable({ rows }: { rows: MonitorRow[] }) {
                   <th className="py-2 pr-2">Private</th>
                   <th className="py-2 pr-2">Fresh</th>
                   <th className="py-2 pr-2">Total</th>
+                  {remindersEnabled && <th className="py-2 pr-2">Reminder</th>}
                 </tr>
               </thead>
               <tbody>
@@ -108,6 +246,17 @@ export function MonitorTable({ rows }: { rows: MonitorRow[] }) {
                     <td className="py-2 pr-2">{r.submitted ? r.privateAdmission : "—"}</td>
                     <td className="py-2 pr-2">{r.submitted ? r.freshAdmission : "—"}</td>
                     <td className="py-2 pr-2 font-semibold">{r.submitted ? r.totalEnrollment : "—"}</td>
+                    {remindersEnabled && (
+                      <td className="py-2 pr-2">
+                        {!r.submitted && (
+                          <ReminderButton
+                            row={r}
+                            opened={openedReminders.has(r.schoolId)}
+                            onOpen={() => openReminder(r)}
+                          />
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -124,6 +273,49 @@ function MobileStat({ label, value }: { label: string; value: number | string })
     <div className="rounded-lg bg-brand-50 p-1.5">
       <p className="text-[10px] text-gray-500">{label}</p>
       <p className="text-xs font-bold text-brand-900">{value}</p>
+    </div>
+  );
+}
+
+function ReminderButton({
+  row,
+  opened,
+  onOpen,
+  fullWidth = false,
+}: {
+  row: MonitorRow;
+  opened: boolean;
+  onOpen: () => void;
+  fullWidth?: boolean;
+}) {
+  const eligible = isReminderEligible(row);
+
+  if (!eligible) {
+    return (
+      <button
+        type="button"
+        disabled
+        className={`min-h-[48px] cursor-not-allowed rounded-xl border border-gray-200 bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-400 ${
+          fullWidth ? "w-full" : ""
+        }`}
+      >
+        ⚠ No Mobile Number
+      </button>
+    );
+  }
+
+  return (
+    <div className={fullWidth ? "w-full" : "inline-flex flex-col items-start gap-1"}>
+      <button
+        type="button"
+        onClick={onOpen}
+        className={`min-h-[48px] rounded-xl bg-[#25D366] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1ebc59] ${
+          fullWidth ? "w-full" : ""
+        }`}
+      >
+        📱 WhatsApp Reminder
+      </button>
+      {opened && <p className="mt-1 text-xs font-semibold text-brand-700">✓ Reminder Opened</p>}
     </div>
   );
 }
