@@ -44,7 +44,7 @@ export default async function DashboardPage() {
         <Card>
           <p className="text-sm text-gray-500">Welcome,</p>
           <p className="text-lg font-bold text-brand-900">{current.profile.full_name}</p>
-          <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+          <div className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
             <div>
               <p className="text-gray-500">School Name</p>
               <p className="font-semibold text-brand-900">{current.school.school_name}</p>

@@ -117,6 +117,45 @@ export function UsersManager({ initialUsers, schools, initialError = null }: Pro
     setShowForm(false);
   }
 
+  function renderReassignControl(u: HeadteacherUser) {
+    if (u.role !== "headteacher") return <span className="text-xs text-gray-400">—</span>;
+    return (
+      <select
+        className="w-full rounded-lg border border-brand-200 px-2 py-1.5 text-xs sm:w-auto"
+        value={u.school_id ?? ""}
+        disabled={reassigning === u.id}
+        onChange={(e) => handleReassign(u.id, e.target.value)}
+      >
+        <option value="">Not assigned</option>
+        {schools.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.school_name}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  function renderStatusBadge(u: HeadteacherUser) {
+    if (u.role === "admin") {
+      return (
+        <span className="rounded-full bg-brand-100 px-2 py-0.5 text-xs font-semibold text-brand-800">Admin</span>
+      );
+    }
+    if (u.school_id) {
+      return (
+        <span className="rounded-full bg-brand-100 px-2 py-0.5 text-xs font-semibold text-brand-800">
+          Assigned
+        </span>
+      );
+    }
+    return (
+      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+        Not Assigned
+      </span>
+    );
+  }
+
   async function handleReassign(userId: string, schoolId: string) {
     setReassigning(userId);
     setError(null);
@@ -186,66 +225,57 @@ export function UsersManager({ initialUsers, schools, initialError = null }: Pro
             <EmptyState icon="🔍" title="No users match your search" />
           )
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-brand-100 text-gray-500">
-                  <th className="py-2 pr-2">Full Name</th>
-                  <th className="py-2 pr-2">Email</th>
-                  <th className="py-2 pr-2">Mobile</th>
-                  <th className="py-2 pr-2">Assigned School</th>
-                  <th className="py-2 pr-2">Account Status</th>
-                  <th className="py-2 pr-2">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((u) => (
-                  <tr key={u.id} className="border-b border-brand-50">
-                    <td className="py-2 pr-2 font-medium text-brand-900">{u.full_name}</td>
-                    <td className="py-2 pr-2 text-gray-600">{u.email ?? "—"}</td>
-                    <td className="py-2 pr-2 text-gray-600">{u.mobile_number ?? "—"}</td>
-                    <td className="py-2 pr-2 text-gray-600">
-                      {u.role === "headteacher" ? schoolName(u.school_id) ?? "Not assigned" : "—"}
-                    </td>
-                    <td className="py-2 pr-2">
-                      {u.role === "admin" ? (
-                        <span className="rounded-full bg-brand-100 px-2 py-0.5 text-xs font-semibold text-brand-800">
-                          Admin
-                        </span>
-                      ) : u.school_id ? (
-                        <span className="rounded-full bg-brand-100 px-2 py-0.5 text-xs font-semibold text-brand-800">
-                          Assigned
-                        </span>
-                      ) : (
-                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
-                          Not Assigned
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-2 pr-2">
-                      {u.role === "headteacher" ? (
-                        <select
-                          className="rounded-lg border border-brand-200 px-2 py-1 text-xs"
-                          value={u.school_id ?? ""}
-                          disabled={reassigning === u.id}
-                          onChange={(e) => handleReassign(u.id, e.target.value)}
-                        >
-                          <option value="">Not assigned</option>
-                          {schools.map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.school_name}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <span className="text-xs text-gray-400">—</span>
-                      )}
-                    </td>
+          <>
+            {/* Mobile card list — email addresses get full width, no horizontal scrolling */}
+            <div className="divide-y divide-brand-50 sm:hidden">
+              {filtered.map((u) => (
+                <div key={u.id} className="py-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-brand-900">{u.full_name}</p>
+                      <p className="mt-0.5 break-all text-xs text-gray-600">{u.email ?? "—"}</p>
+                      <p className="text-xs text-gray-500">{u.mobile_number ?? "—"}</p>
+                    </div>
+                    <span className="shrink-0">{renderStatusBadge(u)}</span>
+                  </div>
+                  <p className="mt-2 text-xs text-gray-500">
+                    School: {u.role === "headteacher" ? schoolName(u.school_id) ?? "Not assigned" : "—"}
+                  </p>
+                  {u.role === "headteacher" && <div className="mt-2">{renderReassignControl(u)}</div>}
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop/tablet table */}
+            <div className="hidden overflow-x-auto sm:block">
+              <table className="w-full min-w-[760px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-brand-100 text-gray-500">
+                    <th className="py-2 pr-2">Full Name</th>
+                    <th className="py-2 pr-2">Email</th>
+                    <th className="py-2 pr-2">Mobile</th>
+                    <th className="py-2 pr-2">Assigned School</th>
+                    <th className="py-2 pr-2">Account Status</th>
+                    <th className="py-2 pr-2">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {filtered.map((u) => (
+                    <tr key={u.id} className="border-b border-brand-50">
+                      <td className="py-2 pr-2 font-medium text-brand-900">{u.full_name}</td>
+                      <td className="py-2 pr-2 text-gray-600 break-all">{u.email ?? "—"}</td>
+                      <td className="py-2 pr-2 text-gray-600">{u.mobile_number ?? "—"}</td>
+                      <td className="py-2 pr-2 text-gray-600">
+                        {u.role === "headteacher" ? schoolName(u.school_id) ?? "Not assigned" : "—"}
+                      </td>
+                      <td className="py-2 pr-2">{renderStatusBadge(u)}</td>
+                      <td className="py-2 pr-2">{renderReassignControl(u)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </Card>
 

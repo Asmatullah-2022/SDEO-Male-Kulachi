@@ -144,7 +144,7 @@ export default async function AdminOverviewPage({
           )}
         </Card>
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4">
           <StatCard label="Total Schools" value={totalSchoolCount} icon="🏫" />
           <StatCard label="Total Headteachers" value={totalHeadteachers} icon="👤" />
           <StatCard label="Reports Submitted" value={submittedCount} tone="brand" icon="✅" />
@@ -182,48 +182,88 @@ export default async function AdminOverviewPage({
           {pendingWithHeadteacher.length === 0 ? (
             <EmptyState icon="🎉" title="All active schools have submitted this date's report!" />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[600px] text-left text-sm">
-                <thead>
-                  <tr className="border-b border-brand-100 text-gray-500">
-                    <th className="py-2 pr-2">School Name</th>
-                    <th className="py-2 pr-2">EMIS Code</th>
-                    <th className="py-2 pr-2">Headteacher</th>
-                    <th className="py-2 pr-2">Mobile</th>
-                    <th className="py-2 pr-2">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pendingWithHeadteacher.map(({ school, headteacher }) => {
-                    const waNumber = toWhatsAppNumber(headteacher?.mobile);
-                    return (
-                      <tr key={school.id} className="border-b border-brand-50">
-                        <td className="py-2 pr-2 font-medium text-brand-900">{school.school_name}</td>
-                        <td className="py-2 pr-2 text-gray-600">{school.emis_code}</td>
-                        <td className="py-2 pr-2 text-gray-600">{headteacher?.name ?? "Not assigned"}</td>
-                        <td className="py-2 pr-2 text-gray-600">{headteacher?.mobile ?? "—"}</td>
-                        <td className="py-2 pr-2">
-                          {isToday && waNumber ? (
-                            <a
-                              href={buildWhatsAppDeepLink(reminderMessage, waNumber)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 rounded-lg bg-[#25D366] px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-[#1ebc59]"
-                            >
-                              💬 Remind
-                            </a>
-                          ) : (
-                            <span className="text-xs text-gray-400">
-                              {isToday ? "No mobile number" : "Only for today"}
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <>
+              {/* Mobile card list — avoids horizontal scrolling on small screens */}
+              <div className="divide-y divide-brand-50 sm:hidden">
+                {pendingWithHeadteacher.map(({ school, headteacher }) => {
+                  const waNumber = toWhatsAppNumber(headteacher?.mobile);
+                  return (
+                    <div key={school.id} className="py-3">
+                      <p className="font-semibold text-brand-900">{school.school_name}</p>
+                      <p className="text-xs text-gray-500">EMIS: {school.emis_code}</p>
+                      <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-gray-600">
+                        <div>
+                          <dt className="text-gray-400">Headteacher</dt>
+                          <dd>{headteacher?.name ?? "Not assigned"}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-gray-400">Mobile</dt>
+                          <dd>{headteacher?.mobile ?? "—"}</dd>
+                        </div>
+                      </dl>
+                      {isToday && waNumber ? (
+                        <a
+                          href={buildWhatsAppDeepLink(reminderMessage, waNumber)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-3 inline-flex items-center gap-1 rounded-lg bg-[#25D366] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1ebc59]"
+                        >
+                          💬 Remind
+                        </a>
+                      ) : (
+                        <p className="mt-2 text-xs text-gray-400">
+                          {isToday ? "No mobile number" : "Reminders only available for today"}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Desktop/tablet table */}
+              <div className="hidden overflow-x-auto sm:block">
+                <table className="w-full min-w-[600px] text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-brand-100 text-gray-500">
+                      <th className="py-2 pr-2">School Name</th>
+                      <th className="py-2 pr-2">EMIS Code</th>
+                      <th className="py-2 pr-2">Headteacher</th>
+                      <th className="py-2 pr-2">Mobile</th>
+                      <th className="py-2 pr-2">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pendingWithHeadteacher.map(({ school, headteacher }) => {
+                      const waNumber = toWhatsAppNumber(headteacher?.mobile);
+                      return (
+                        <tr key={school.id} className="border-b border-brand-50">
+                          <td className="py-2 pr-2 font-medium text-brand-900">{school.school_name}</td>
+                          <td className="py-2 pr-2 text-gray-600">{school.emis_code}</td>
+                          <td className="py-2 pr-2 text-gray-600">{headteacher?.name ?? "Not assigned"}</td>
+                          <td className="py-2 pr-2 text-gray-600">{headteacher?.mobile ?? "—"}</td>
+                          <td className="py-2 pr-2">
+                            {isToday && waNumber ? (
+                              <a
+                                href={buildWhatsAppDeepLink(reminderMessage, waNumber)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 rounded-lg bg-[#25D366] px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-[#1ebc59]"
+                              >
+                                💬 Remind
+                              </a>
+                            ) : (
+                              <span className="text-xs text-gray-400">
+                                {isToday ? "No mobile number" : "Only for today"}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </Card>
       </div>
