@@ -3,6 +3,8 @@
 import { FormEvent, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { headteacherSchema } from "@/lib/validation";
+import { getSchools } from "@/lib/services/schools";
+import { useAdminCache } from "@/lib/adminCache";
 import type { HeadteacherUser, School } from "@/lib/types";
 import { Card } from "@/components/Card";
 import { Input } from "@/components/Input";
@@ -10,22 +12,32 @@ import { Select } from "@/components/Select";
 import { Button } from "@/components/Button";
 import { Alert } from "@/components/Alert";
 import { EmptyState } from "@/components/EmptyState";
-import { Spinner } from "@/components/Spinner";
+import { TableSkeleton } from "@/components/Skeleton";
 
 const emptyForm = { full_name: "", email: "", mobile_number: "", password: "", school_id: "" };
 
-interface Props {
-  initialUsers: HeadteacherUser[];
-  schools: School[];
-  initialError?: string | null;
+async function fetchHeadteachers(): Promise<HeadteacherUser[]> {
+  const res = await fetch("/api/admin/headteachers");
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? "Could not refresh the user list.");
+  return json.users as HeadteacherUser[];
 }
 
-export function UsersManager({ initialUsers, schools, initialError = null }: Props) {
-  const [users, setUsers] = useState<HeadteacherUser[]>(initialUsers);
+/**
+ * Reads/writes the "adminUsers" and "schools" cache keys shared with
+ * Overview and the Schools tab (see src/lib/adminCache.ts) — the schools
+ * dropdown here reuses the exact same fetch Overview/Schools already made,
+ * instead of the school list being queried a third time.
+ */
+export function UsersManager() {
+  const usersCache = useAdminCache<HeadteacherUser[]>("adminUsers", fetchHeadteachers);
+  const schoolsCache = useAdminCache<School[]>("schools", () => getSchools(createClient()));
+  const users = usersCache.data ?? [];
+  const schools = schoolsCache.data ?? [];
   const [form, setForm] = useState(emptyForm);
   const [showForm, setShowForm] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [error, setError] = useState<string | null>(initialError);
+  const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -58,10 +70,7 @@ export function UsersManager({ initialUsers, schools, initialError = null }: Pro
     setRefreshing(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/headteachers");
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Could not refresh the user list.");
-      setUsers(json.users as HeadteacherUser[]);
+      await usersCache.refresh();
     } catch (err) {
       setError((err as Error)?.message ?? "Could not refresh the user list. Please check your connection and try again.");
     } finally {
@@ -109,7 +118,9 @@ export function UsersManager({ initialUsers, schools, initialError = null }: Pro
     const { data: newProfile } = await supabase.from("profiles").select("*").eq("id", json.id).single();
     if (newProfile) {
       const newUser: HeadteacherUser = { ...newProfile, email: json.email ?? result.data.email };
-      setUsers((prev) => [...prev, newUser].sort((a, b) => a.full_name.localeCompare(b.full_name)));
+      usersCache.mutate((prev) =>
+        [...(prev ?? []), newUser].sort((a, b) => a.full_name.localeCompare(b.full_name))
+      );
     }
 
     setSuccess(`Headteacher account created for ${result.data.full_name}.`);
@@ -171,12 +182,14 @@ export function UsersManager({ initialUsers, schools, initialError = null }: Pro
       setError("Could not reassign school.");
       return;
     }
-    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, ...data } : u)));
+    usersCache.mutate((prev) => (prev ?? []).map((u) => (u.id === userId ? { ...u, ...data } : u)));
   }
 
   return (
     <div className="space-y-6">
-      {error && <Alert type="error">{error}</Alert>}
+      {(error || usersCache.error || schoolsCache.error) && (
+        <Alert type="error">{error ?? usersCache.error ?? schoolsCache.error}</Alert>
+      )}
       {success && <Alert type="success">{success}</Alert>}
 
       {/* Search + stats — shown first so admins can find an existing user before adding a new one */}
@@ -213,8 +226,8 @@ export function UsersManager({ initialUsers, schools, initialError = null }: Pro
 
       {/* User list */}
       <Card>
-        {refreshing ? (
-          <Spinner label="Refreshing users..." />
+        {usersCache.loading && users.length === 0 ? (
+          <TableSkeleton rows={5} />
         ) : filtered.length === 0 ? (
           users.length === 0 ? (
             <EmptyState

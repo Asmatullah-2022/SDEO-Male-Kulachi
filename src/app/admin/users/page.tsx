@@ -1,50 +1,20 @@
-import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { describeAdminError } from "@/lib/supabase/admin-error";
-import { getSchools } from "@/lib/services/schools";
-import { getUsersWithEmail } from "@/lib/services/users";
-import type { HeadteacherUser, School } from "@/lib/types";
 import { Header } from "@/components/Header";
 import { AdminNav } from "@/components/AdminNav";
 import { UsersManager } from "./UsersManager";
 
-export default async function AdminUsersPage() {
-  const current = await getCurrentUser();
-  if (!current) redirect("/login");
-  if (current.profile.role !== "admin") redirect("/dashboard");
-
-  const supabase = await createClient();
-
-  let schools: School[] = [];
-  let schoolsError: string | null = null;
-  try {
-    schools = await getSchools(supabase);
-  } catch {
-    schoolsError = "Could not load the schools list. Please refresh the page or try again shortly.";
-  }
-
-  let users: HeadteacherUser[] = [];
-  let usersError: string | null = null;
-  try {
-    users = await getUsersWithEmail(supabase, createAdminClient());
-  } catch (err) {
-    const { log, userMessage } = describeAdminError(err, "AdminUsersPage (SSR)");
-    console.error(log);
-    usersError = userMessage;
-  }
-
+/**
+ * Auth/role protection lives entirely in middleware now — see the comment
+ * in src/app/admin/page.tsx. This page has no server-side data dependency;
+ * UsersManager fetches from the shared client cache (src/lib/adminCache.ts),
+ * reusing the same "schools" cache entry Overview/Schools already populate.
+ */
+export default function AdminUsersPage() {
   return (
     <main className="flex min-h-dvh flex-col bg-brand-50">
       <Header title="SDEO Kulachi Admin" subtitle="User Management" homeHref="/admin" />
       <AdminNav />
       <div className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">
-        <UsersManager
-          initialUsers={users}
-          schools={schools}
-          initialError={usersError ?? schoolsError}
-        />
+        <UsersManager />
       </div>
     </main>
   );

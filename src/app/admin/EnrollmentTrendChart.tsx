@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { formatDisplayDate } from "@/lib/date";
 
@@ -7,7 +8,7 @@ interface Props {
   data: { date: string; total: number }[];
 }
 
-export function EnrollmentTrendChart({ data }: Props) {
+export const EnrollmentTrendChart = memo(function EnrollmentTrendChart({ data }: Props) {
   const chartData = data.map((d) => ({ ...d, label: formatDisplayDate(d.date) }));
 
   return (
@@ -23,4 +24,4 @@ export function EnrollmentTrendChart({ data }: Props) {
       </ResponsiveContainer>
     </div>
   );
-}
+});
