@@ -1,25 +1,20 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { enrollmentSchema } from "@/lib/validation";
 import { buildWhatsAppMessage, getReportShareLink } from "@/lib/whatsapp";
-import { formatDisplayDate, formatDateTime } from "@/lib/date";
-import type { DailyEnrollment, School } from "@/lib/types";
+import { formatDisplayDate, formatDateTime, todayISO } from "@/lib/date";
+import { useAdminCache } from "@/lib/adminCache";
+import { fetchMyProfile, fetchMyReports, type MyProfileData } from "@/lib/headteacherCache";
+import type { DailyEnrollment } from "@/lib/types";
 import { Card } from "@/components/Card";
 import { NumberStepper } from "@/components/NumberStepper";
 import { Textarea } from "@/components/Textarea";
 import { Button } from "@/components/Button";
 import { Alert } from "@/components/Alert";
-
-interface Props {
-  school: School;
-  userId: string;
-  headteacherName: string;
-  today: string;
-  existingReport: DailyEnrollment | null;
-}
+import { Skeleton } from "@/components/Skeleton";
 
 interface FormValues {
   fresh_admission: number;
@@ -29,23 +24,62 @@ interface FormValues {
   remarks: string;
 }
 
-export function SubmitReportForm({ school, userId, headteacherName, today, existingReport }: Props) {
+const emptyValues: FormValues = {
+  fresh_admission: 0,
+  public_admission: 0,
+  private_admission: 0,
+  dropout: 0,
+  remarks: "",
+};
+
+/**
+ * Reads the same "myProfile"/"myReports" cache the Home and History tabs
+ * share (src/lib/headteacherCache.ts) instead of receiving school/user/
+ * existingReport as server-rendered props — that removed the per-navigation
+ * Supabase round trip this page used to pay on every tab switch.
+ */
+export function SubmitReportForm() {
   const router = useRouter();
-  const [values, setValues] = useState<FormValues>({
-    fresh_admission: existingReport?.fresh_admission ?? 0,
-    public_admission: existingReport?.public_admission ?? 0,
-    private_admission: existingReport?.private_admission ?? 0,
-    dropout: existingReport?.dropout ?? 0,
-    remarks: existingReport?.remarks ?? "",
-  });
+  const profileCache = useAdminCache<MyProfileData>("myProfile", fetchMyProfile);
+  const reportsCache = useAdminCache<DailyEnrollment[]>("myReports", fetchMyReports);
+
+  useEffect(() => {
+    if (profileCache.data?.profile.role === "admin") router.replace("/admin");
+  }, [profileCache.data, router]);
+
+  const today = todayISO();
+  const existingReport = useMemo(
+    () => reportsCache.data?.find((r) => r.report_date === today) ?? null,
+    [reportsCache.data, today]
+  );
+
+  const [values, setValues] = useState<FormValues>(emptyValues);
+  const [initializedFor, setInitializedFor] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
-  // Starts null even when a report already exists for today — an existing
-  // report pre-fills the editable form (below) instead of jumping straight
-  // to the read-only confirmation screen, which is what actually lets a
-  // headteacher edit today's submission rather than only ever viewing it.
   const [savedReport, setSavedReport] = useState<DailyEnrollment | null>(null);
+
+  // Pre-fill the form from the cached existing report exactly once it
+  // becomes available, without clobbering the headteacher's in-progress
+  // edits on every re-render (cache resolves asynchronously). Adjusting
+  // state during render, rather than in an effect, is the pattern React
+  // recommends for this — it avoids an extra commit-then-immediately-
+  // re-render cycle. See https://react.dev/learn/you-might-not-need-an-effect
+  if (reportsCache.data && initializedFor !== today) {
+    setInitializedFor(today);
+    setValues(
+      existingReport
+        ? {
+            fresh_admission: existingReport.fresh_admission,
+            public_admission: existingReport.public_admission,
+            private_admission: existingReport.private_admission,
+            dropout: existingReport.dropout,
+            remarks: existingReport.remarks ?? "",
+          }
+        : emptyValues
+    );
+  }
 
   const total = values.fresh_admission + values.public_admission + values.private_admission + values.dropout;
 
@@ -67,6 +101,11 @@ export function SubmitReportForm({ school, userId, headteacherName, today, exist
       return;
     }
     setErrors({});
+
+    const school = profileCache.data?.school;
+    const profile = profileCache.data?.profile;
+    if (!school || !profile) return;
+
     setSubmitting(true);
 
     const supabase = createClient();
@@ -74,7 +113,7 @@ export function SubmitReportForm({ school, userId, headteacherName, today, exist
       result.data.fresh_admission + result.data.public_admission + result.data.private_admission + result.data.dropout;
     const payload = {
       school_id: school.id,
-      user_id: userId,
+      user_id: profile.id,
       report_date: today,
       dropout: result.data.dropout,
       public_admission: result.data.public_admission,
@@ -101,8 +140,42 @@ export function SubmitReportForm({ school, userId, headteacherName, today, exist
       return;
     }
 
-    setSavedReport(data as DailyEnrollment);
+    const saved = data as DailyEnrollment;
+    setSavedReport(saved);
+    // Update the shared cache directly so Home/History reflect this
+    // submission immediately, with no refetch needed on the next tab switch.
+    reportsCache.mutate((prev) => {
+      const others = (prev ?? []).filter((r) => r.id !== saved.id);
+      return [saved, ...others].sort((a, b) => b.report_date.localeCompare(a.report_date));
+    });
   }
+
+  const loadError = profileCache.error || reportsCache.error;
+  if (loadError) {
+    return <Alert type="error">{loadError}</Alert>;
+  }
+
+  const loading = (profileCache.loading && !profileCache.data) || (reportsCache.loading && !reportsCache.data);
+
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-4">
+        <Skeleton className="h-32 w-full" />
+        <Skeleton className="h-80 w-full" />
+      </div>
+    );
+  }
+
+  if (!profileCache.data?.school) {
+    return (
+      <Alert type="warning">
+        Your account is not yet assigned to a school. Please contact the SDEO (Male) Kulachi office.
+      </Alert>
+    );
+  }
+
+  const { school, profile } = profileCache.data;
+  const headteacherName = profile.full_name;
 
   if (savedReport) {
     const message = buildWhatsAppMessage(savedReport, school, headteacherName);
