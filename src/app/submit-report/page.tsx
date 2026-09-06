@@ -42,6 +42,7 @@ export default async function SubmitReportPage() {
         <SubmitReportForm
           school={current.school}
           userId={current.profile.id}
+          headteacherName={current.profile.full_name}
           today={today}
           existingReport={existingReport}
         />
