@@ -12,10 +12,18 @@ import { useEffect, useReducer } from "react";
  * instant: the second mount finds `entry.data` already populated and skips
  * the network round trip entirely.
  *
- * Cleared only by a hard page reload — exactly the "don't refetch on tab
- * switch, only on manual Refresh" behavior the dashboard needs. There is no
- * time-based expiry on purpose: staleness is only ever resolved by the
- * user pressing Refresh.
+ * Otherwise cleared only by a hard page reload — exactly the "don't
+ * refetch on tab switch, only on manual Refresh" behavior the dashboard
+ * needs. There is no time-based expiry on purpose: staleness is only ever
+ * resolved by the user pressing Refresh.
+ *
+ * The one other time this MUST be cleared: signing out and a different
+ * account signing in, in the same browser tab. Nothing here is keyed by
+ * user id — keys like "myProfile" and "myReports" mean "whoever is
+ * currently signed in" — so without an explicit clear, a second account
+ * signing in in that tab would keep seeing the first account's cached
+ * profile, school, and reports. clearAllCache() (called from the sign-out
+ * button and right after a successful sign-in) is what prevents that.
  */
 interface CacheEntry<T> {
   data: T | null;
@@ -33,6 +41,16 @@ function getEntry<T>(key: string): CacheEntry<T> {
     cache.set(key, entry as CacheEntry<unknown>);
   }
   return entry;
+}
+
+/**
+ * Wipes every cached entry — every tab's data for every user-scoped and
+ * admin-scoped key. Call this on sign-out and right after a successful
+ * sign-in, so no account ever sees a previous account's cached profile,
+ * school, reports, or lists from the same browser tab.
+ */
+export function clearAllCache() {
+  cache.clear();
 }
 
 function runFetch<T>(key: string, fetcher: () => Promise<T>): Promise<void> {

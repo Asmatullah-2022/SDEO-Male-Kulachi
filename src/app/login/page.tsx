@@ -4,6 +4,7 @@ import { FormEvent, Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { clearAllCache } from "@/lib/adminCache";
 import { loginSchema } from "@/lib/validation";
 import { Button } from "@/components/Button";
 import { Input } from "@/components/Input";
@@ -49,6 +50,12 @@ function LoginForm() {
     }
 
     if (data.user) {
+      // Defense in depth alongside SignOutButton's clear: guarantees a
+      // fresh fetch for THIS session's user even if a previous session in
+      // this tab ended some other way (expired token, closed tab without
+      // signing out) and left cached profile/school/report data behind.
+      clearAllCache();
+
       const { data: profile } = await supabase
         .from("profiles")
         .select("role")
