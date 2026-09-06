@@ -64,6 +64,34 @@ export function buildGroupShareLink(message: string): string {
 }
 
 /**
+ * TEMPORARY TESTING CONFIG — a direct WhatsApp group invite link
+ * (https://chat.whatsapp.com/...) to open instead of the normal
+ * group-picker flow above, so a demo/test group can be exercised without
+ * touching the real "SDEO (M) Kulachi" group. Set via
+ * NEXT_PUBLIC_OFFICIAL_WHATSAPP_GROUP_URL; leave unset in normal
+ * production use.
+ *
+ * IMPORTANT LIMITATION: WhatsApp group invite links have no mechanism to
+ * carry pre-filled message text (unlike wa.me/?text=...) — this is a
+ * WhatsApp platform restriction, not something this app can work around.
+ * Clicking the button will open the group directly; the Headteacher still
+ * sees the full report in the Submission Summary above and can copy/paste
+ * or retype it once inside the chat. Remove this env var to go back to the
+ * normal pre-filled group-picker behavior.
+ */
+export const OFFICIAL_WHATSAPP_GROUP_URL =
+  process.env.NEXT_PUBLIC_OFFICIAL_WHATSAPP_GROUP_URL ?? "";
+
+/**
+ * Returns the link the "Share Report" button should open: the temporary
+ * test group URL when configured, otherwise the normal pre-filled
+ * group-picker link.
+ */
+export function getReportShareLink(message: string): string {
+  return OFFICIAL_WHATSAPP_GROUP_URL || buildGroupShareLink(message);
+}
+
+/**
  * The reminder message sent to a headteacher whose school hasn't submitted
  * today's report yet. Text and line breaks are fixed by SDEO office policy
  * — do not reword.

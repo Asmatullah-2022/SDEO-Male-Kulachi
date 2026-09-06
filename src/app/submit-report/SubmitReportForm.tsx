@@ -4,7 +4,7 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { enrollmentSchema } from "@/lib/validation";
-import { buildGroupShareLink, buildWhatsAppMessage } from "@/lib/whatsapp";
+import { buildWhatsAppMessage, getReportShareLink } from "@/lib/whatsapp";
 import { formatDisplayDate } from "@/lib/date";
 import type { DailyEnrollment, School } from "@/lib/types";
 import { Card } from "@/components/Card";
@@ -93,7 +93,7 @@ export function SubmitReportForm({ school, userId, headteacherName, today, exist
 
   if (savedReport) {
     const message = buildWhatsAppMessage(savedReport, school, headteacherName);
-    const link = buildGroupShareLink(message);
+    const link = getReportShareLink(message);
 
     return (
       <div className="flex flex-col gap-4">
