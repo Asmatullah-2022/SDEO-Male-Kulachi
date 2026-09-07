@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
@@ -13,8 +14,8 @@ export default function LandingPage() {
   return (
     <main className="flex min-h-dvh flex-col bg-brand-50">
       <header className="mx-auto flex w-full max-w-4xl items-center gap-3 px-4 py-5">
-        <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-600 text-2xl text-white shadow-md">
-          🎓
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full shadow-md">
+          <Image src="/logo.png" alt="SDEO Male Kulachi" width={44} height={44} className="h-full w-full object-contain" />
         </span>
         <div>
           <p className="text-sm font-bold text-brand-900">SDEO (Male) Kulachi</p>

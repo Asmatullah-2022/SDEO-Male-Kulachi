@@ -2,6 +2,7 @@
 
 import { FormEvent, Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Image from "next/image";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { clearAllCache } from "@/lib/adminCache";
@@ -71,8 +72,8 @@ function LoginForm() {
     <div className="flex min-h-dvh flex-col justify-center bg-brand-50 px-4 py-10">
       <div className="mx-auto w-full max-w-sm">
         <div className="mb-6 text-center">
-          <span className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-600 text-3xl text-white shadow-lg">
-            🎓
+          <span className="mx-auto mb-3 flex h-16 w-16 items-center justify-center overflow-hidden rounded-full shadow-lg">
+            <Image src="/logo.png" alt="SDEO Male Kulachi" width={64} height={64} className="h-full w-full object-contain" />
           </span>
           <h1 className="text-xl font-bold text-brand-900">Headteacher Login</h1>
           <p className="mt-1 text-sm text-gray-600">

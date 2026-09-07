@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { SignOutButton } from "./SignOutButton";
 
@@ -23,8 +24,8 @@ export function Header({
     <header className="sticky top-0 z-10 border-b border-brand-100 bg-white/95 backdrop-blur">
       <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3.5">
         <Link href={homeHref} className="flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-600 text-lg text-white">
-            🎓
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full">
+            <Image src="/logo.png" alt="SDEO Male Kulachi" width={36} height={36} className="h-full w-full object-contain" />
           </span>
           <div className="leading-tight">
             <p className="text-sm font-bold text-brand-900">{title}</p>

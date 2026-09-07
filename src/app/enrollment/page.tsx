@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import { EnrollmentPortal } from "./EnrollmentPortal";
 
 export const metadata: Metadata = {
@@ -11,8 +12,8 @@ export default function EnrollmentPortalPage() {
     <main className="flex min-h-dvh flex-col bg-brand-50">
       <header className="border-b border-brand-100 bg-white">
         <div className="mx-auto flex max-w-2xl items-center gap-3 px-4 py-4">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-2xl text-white">
-            🎓
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full">
+            <Image src="/logo.png" alt="SDEO Male Kulachi" width={44} height={44} className="h-full w-full object-contain" />
           </span>
           <div className="leading-tight">
             <p className="text-sm font-bold text-brand-900">SDEO Male Kulachi</p>
