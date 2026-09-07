@@ -3,8 +3,9 @@ import { BottomNav } from "@/components/BottomNav";
 import { ProfileClient } from "./ProfileClient";
 
 /**
- * Shared by both roles: a headteacher reaches it via the bottom nav, an
- * admin via the header profile link (admin pages have no bottom nav).
+ * Headteacher Profile page, reached via the bottom nav. Admin has its own
+ * dedicated profile page at /admin/profile (see src/app/admin/profile) —
+ * this route no longer doubles as the admin's profile link.
  * Auth is enforced by middleware (added to PROTECTED_PREFIXES); no
  * server-side data dependency here, same pattern as the other headteacher
  * pages — see src/app/dashboard/page.tsx.
