@@ -166,22 +166,30 @@ create policy "profiles_select_own_or_admin"
   to authenticated
   using (id = auth.uid() or public.is_admin());
 
+-- Admin-only. Every real profile row is created by the on_auth_user_created
+-- trigger below (security definer, so it bypasses RLS regardless of this
+-- policy) or by the admin-only /api/admin/headteachers route (service
+-- role, also bypasses RLS). No app code ever inserts a profiles row from
+-- an authenticated user's own client session, so there is no legitimate
+-- self-insert case to allow for here.
 drop policy if exists "profiles_admin_insert" on public.profiles;
 create policy "profiles_admin_insert"
   on public.profiles for insert
   to authenticated
-  with check (public.is_admin() or id = auth.uid());
+  with check (public.is_admin());
 
+-- Admin-only. The app has no headteacher self-edit-profile feature, so
+-- there is no legitimate case for a non-admin update here — and a
+-- self-referential "role hasn't changed" check in WITH CHECK is fragile
+-- to reason about correctly under RLS's snapshot semantics for UPDATE.
+-- Simplest and safest: a headteacher session can never update any
+-- profiles row, their own included, only admins can.
 drop policy if exists "profiles_admin_update" on public.profiles;
 create policy "profiles_admin_update"
   on public.profiles for update
   to authenticated
-  using (public.is_admin() or id = auth.uid())
-  with check (
-    public.is_admin()
-    or (id = auth.uid() and role = (select role from public.profiles where id = auth.uid())
-        and school_id is not distinct from (select school_id from public.profiles where id = auth.uid()))
-  );
+  using (public.is_admin())
+  with check (public.is_admin());
 
 drop policy if exists "profiles_admin_delete" on public.profiles;
 create policy "profiles_admin_delete"
@@ -205,12 +213,21 @@ create policy "enrollment_insert_own_school"
     or public.is_admin()
   );
 
+-- WITH CHECK also pins user_id = auth.uid() for the non-admin branch, so a
+-- headteacher session can't repoint a report's authorship to some other
+-- profile id by calling the update directly (bypassing the app's own
+-- upsert payload, which always sets user_id to the caller). This only
+-- restricts what a non-admin can set user_id to on their own school's
+-- rows — it doesn't affect which rows they can select/target for update.
 drop policy if exists "enrollment_update_own_school_or_admin" on public.daily_enrollment;
 create policy "enrollment_update_own_school_or_admin"
   on public.daily_enrollment for update
   to authenticated
   using (school_id = public.current_school_id() or public.is_admin())
-  with check (school_id = public.current_school_id() or public.is_admin());
+  with check (
+    (school_id = public.current_school_id() and user_id = auth.uid())
+    or public.is_admin()
+  );
 
 drop policy if exists "enrollment_delete_admin_only" on public.daily_enrollment;
 create policy "enrollment_delete_admin_only"
