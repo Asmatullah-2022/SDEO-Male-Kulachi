@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { HeadteacherUser } from "@/lib/types";
+import type { HeadteacherUser, Profile } from "@/lib/types";
 import { logSupabaseError } from "@/lib/supabase/admin-error";
 
 /**
@@ -32,4 +32,27 @@ export async function getUsersWithEmail(
 
   const emailById = new Map(authList.users.map((u) => [u.id, u.email ?? null]));
   return (profiles ?? []).map((p) => ({ ...p, email: emailById.get(p.id) ?? null }));
+}
+
+/**
+ * Updates only full_name and mobile_number on a profile — used by both the
+ * headteacher's own Profile page and the admin's User Management edit
+ * action. Never touches email, role, or school_id (school reassignment
+ * has its own dedicated control). RLS plus the profiles_restrict_self_
+ * update trigger enforce this same restriction at the database level
+ * regardless of what this function is called with.
+ */
+export async function updateProfileNameAndMobile(
+  supabase: SupabaseClient,
+  id: string,
+  input: { full_name: string; mobile_number: string }
+): Promise<Profile> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({ full_name: input.full_name, mobile_number: input.mobile_number })
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as Profile;
 }

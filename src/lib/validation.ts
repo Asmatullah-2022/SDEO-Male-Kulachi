@@ -47,3 +47,37 @@ export const headteacherSchema = z.object({
   password: z.string().min(6, "Password must be at least 6 characters"),
   school_id: z.string().uuid("Select a school"),
 });
+
+/**
+ * Full Name + Mobile Number only — the fields a headteacher may edit on
+ * their own profile, and the fields an admin may edit on a headteacher's
+ * profile via User Management. Never includes email, role, or school_id:
+ * those are either read-only in the UI or have their own dedicated flow
+ * (school reassignment), and are blocked at the database level regardless
+ * (see the profiles_restrict_self_update trigger in schema.sql).
+ */
+export const profileEditSchema = z.object({
+  full_name: z.string().trim().min(2, "Full name is required"),
+  mobile_number: z
+    .string()
+    .trim()
+    .min(1, "Mobile number is required")
+    .refine((value) => {
+      const digits = value.replace(/\D/g, "");
+      return /^03\d{9}$/.test(digits) || /^923\d{9}$/.test(digits);
+    }, "Enter a valid Pakistani mobile number (e.g. 03001234567)"),
+});
+
+export type ProfileEditInput = z.infer<typeof profileEditSchema>;
+
+export const changePasswordSchema = z
+  .object({
+    new_password: z.string().min(6, "Password must be at least 6 characters"),
+    confirm_password: z.string().min(1, "Please confirm your new password"),
+  })
+  .refine((data) => data.new_password === data.confirm_password, {
+    message: "Passwords do not match",
+    path: ["confirm_password"],
+  });
+
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;

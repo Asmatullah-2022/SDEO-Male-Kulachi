@@ -6,9 +6,18 @@ interface HeaderProps {
   subtitle?: string;
   homeHref?: string;
   showSignOut?: boolean;
+  /** Admin pages have no bottom nav (headteacher pages already get a
+   * Profile tab there), so this adds a small link to /profile here instead. */
+  showProfileLink?: boolean;
 }
 
-export function Header({ title, subtitle, homeHref = "/dashboard", showSignOut = true }: HeaderProps) {
+export function Header({
+  title,
+  subtitle,
+  homeHref = "/dashboard",
+  showSignOut = true,
+  showProfileLink = false,
+}: HeaderProps) {
   return (
     <header className="sticky top-0 z-10 border-b border-brand-100 bg-white/95 backdrop-blur">
       <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3.5">
@@ -21,7 +30,17 @@ export function Header({ title, subtitle, homeHref = "/dashboard", showSignOut =
             {subtitle && <p className="text-xs text-gray-500">{subtitle}</p>}
           </div>
         </Link>
-        {showSignOut && <SignOutButton />}
+        <div className="flex items-center gap-1">
+          {showProfileLink && (
+            <Link
+              href="/profile"
+              className="rounded-lg px-3 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50"
+            >
+              👤 Profile
+            </Link>
+          )}
+          {showSignOut && <SignOutButton />}
+        </div>
       </div>
     </header>
   );
