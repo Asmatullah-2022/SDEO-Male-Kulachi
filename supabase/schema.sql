@@ -178,18 +178,52 @@ create policy "profiles_admin_insert"
   to authenticated
   with check (public.is_admin());
 
--- Admin-only. The app has no headteacher self-edit-profile feature, so
--- there is no legitimate case for a non-admin update here — and a
--- self-referential "role hasn't changed" check in WITH CHECK is fragile
--- to reason about correctly under RLS's snapshot semantics for UPDATE.
--- Simplest and safest: a headteacher session can never update any
--- profiles row, their own included, only admins can.
+-- A user may update their own row, or an admin may update anyone's — but
+-- WHICH COLUMNS a non-admin may actually change is enforced by the
+-- profiles_restrict_self_update trigger below, not by this policy. A
+-- previous version of this policy tried to block a self-update from
+-- changing role/school_id using a subquery back onto this same table
+-- inside WITH CHECK — that pattern is genuinely hard to reason about
+-- correctly under RLS's row-visibility/snapshot semantics for UPDATE, so
+-- it was replaced with a BEFORE UPDATE trigger instead, which sees OLD
+-- and NEW directly with no ambiguity.
 drop policy if exists "profiles_admin_update" on public.profiles;
 create policy "profiles_admin_update"
   on public.profiles for update
   to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
+  using (id = auth.uid() or public.is_admin())
+  with check (id = auth.uid() or public.is_admin());
+
+-- Column-level guard for the policy above: a non-admin's update may only
+-- ever result in a changed full_name and/or mobile_number. Any attempt to
+-- change id, role, school_id, designation, or created_at — whether via
+-- this app's own bugs or a hand-crafted request using a valid headteacher
+-- session — is rejected outright. Admins are exempt (they legitimately
+-- reassign schools and manage accounts). This is what actually lets
+-- profiles_admin_update above allow self-updates at all without
+-- reopening the self-privilege-escalation risk removed in the previous
+-- security pass.
+create or replace function public.restrict_profile_self_update()
+returns trigger as $$
+begin
+  if not public.is_admin() then
+    if new.id is distinct from old.id
+      or new.role is distinct from old.role
+      or new.school_id is distinct from old.school_id
+      or new.designation is distinct from old.designation
+      or new.created_at is distinct from old.created_at
+    then
+      raise exception 'You can only update your own full name and mobile number.';
+    end if;
+  end if;
+  return new;
+end;
+$$ language plpgsql security definer set search_path = public;
+
+drop trigger if exists profiles_restrict_self_update on public.profiles;
+create trigger profiles_restrict_self_update
+  before update on public.profiles
+  for each row execute function public.restrict_profile_self_update();
 
 drop policy if exists "profiles_admin_delete" on public.profiles;
 create policy "profiles_admin_delete"

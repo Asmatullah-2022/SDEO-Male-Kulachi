@@ -7,6 +7,7 @@ const items = [
   { href: "/dashboard", label: "Home", icon: "🏠" },
   { href: "/submit-report", label: "Submit", icon: "📝" },
   { href: "/history", label: "History", icon: "📊" },
+  { href: "/profile", label: "Profile", icon: "👤" },
 ];
 
 export function BottomNav() {
@@ -14,7 +15,7 @@ export function BottomNav() {
 
   return (
     <nav className="sticky bottom-0 z-10 border-t border-brand-100 bg-white/95 backdrop-blur">
-      <div className="mx-auto grid max-w-3xl grid-cols-3">
+      <div className="mx-auto grid max-w-3xl grid-cols-4">
         {items.map((item) => {
           const active = pathname === item.href;
           return (

@@ -2,8 +2,9 @@
 
 import { FormEvent, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { headteacherSchema } from "@/lib/validation";
+import { headteacherSchema, profileEditSchema } from "@/lib/validation";
 import { getSchools } from "@/lib/services/schools";
+import { updateProfileNameAndMobile } from "@/lib/services/users";
 import { useAdminCache } from "@/lib/adminCache";
 import type { HeadteacherUser, School } from "@/lib/types";
 import { Card } from "@/components/Card";
@@ -36,6 +37,7 @@ export function UsersManager() {
   const schools = schoolsCache.data ?? [];
   const [form, setForm] = useState(emptyForm);
   const [showForm, setShowForm] = useState(false);
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -81,13 +83,55 @@ export function UsersManager() {
   function handleCancelForm() {
     setForm(emptyForm);
     setErrors({});
+    setEditingUserId(null);
     setShowForm(false);
+  }
+
+  function startEditUser(u: HeadteacherUser) {
+    setForm({ ...emptyForm, full_name: u.full_name, mobile_number: u.mobile_number ?? "" });
+    setErrors({});
+    setError(null);
+    setSuccess(null);
+    setEditingUserId(u.id);
+    setShowForm(true);
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     setSuccess(null);
+
+    // Editing an existing user only ever touches Full Name and Mobile
+    // Number — email, password, school assignment, and role are untouched
+    // here (school reassignment has its own dedicated control below).
+    if (editingUserId) {
+      const editResult = profileEditSchema.safeParse({
+        full_name: form.full_name,
+        mobile_number: form.mobile_number,
+      });
+      if (!editResult.success) {
+        const errs: Record<string, string> = {};
+        editResult.error.issues.forEach((issue) => {
+          errs[String(issue.path[0])] = issue.message;
+        });
+        setErrors(errs);
+        return;
+      }
+      setErrors({});
+      setSaving(true);
+      try {
+        const supabase = createClient();
+        const updated = await updateProfileNameAndMobile(supabase, editingUserId, editResult.data);
+        usersCache.mutate((prev) => (prev ?? []).map((u) => (u.id === editingUserId ? { ...u, ...updated } : u)));
+        setSuccess(`${editResult.data.full_name}'s profile updated successfully.`);
+        handleCancelForm();
+      } catch {
+        setError("Could not update this user's profile. Please try again.");
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
 
     const result = headteacherSchema.safeParse(form);
     if (!result.success) {
@@ -255,7 +299,17 @@ export function UsersManager() {
                   <p className="mt-2 text-xs text-gray-500">
                     School: {u.role === "headteacher" ? schoolName(u.school_id) ?? "Not assigned" : "—"}
                   </p>
-                  {u.role === "headteacher" && <div className="mt-2">{renderReassignControl(u)}</div>}
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {u.role === "headteacher" && renderReassignControl(u)}
+                    <button
+                      type="button"
+                      aria-label={`Edit ${u.full_name}`}
+                      onClick={() => startEditUser(u)}
+                      className="min-h-[44px] rounded-lg border border-brand-200 bg-brand-50 px-3 text-xs font-semibold text-brand-700 active:bg-brand-100"
+                    >
+                      ✏️ Edit
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -283,7 +337,19 @@ export function UsersManager() {
                         {u.role === "headteacher" ? schoolName(u.school_id) ?? "Not assigned" : "—"}
                       </td>
                       <td className="py-2 pr-2">{renderStatusBadge(u)}</td>
-                      <td className="py-2 pr-2">{renderReassignControl(u)}</td>
+                      <td className="py-2 pr-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {renderReassignControl(u)}
+                          <button
+                            type="button"
+                            aria-label={`Edit ${u.full_name}`}
+                            onClick={() => startEditUser(u)}
+                            className="min-h-[44px] rounded-lg border border-brand-200 bg-brand-50 px-3 text-xs font-semibold text-brand-700 active:bg-brand-100"
+                          >
+                            ✏️ Edit
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -302,7 +368,9 @@ export function UsersManager() {
         ) : (
           <>
             <div className="mb-3 flex items-center justify-between">
-              <p className="text-sm font-bold text-brand-900">Add New Headteacher</p>
+              <p className="text-sm font-bold text-brand-900">
+                {editingUserId ? "Edit Headteacher" : "Add New Headteacher"}
+              </p>
               <button
                 type="button"
                 onClick={handleCancelForm}
@@ -311,6 +379,13 @@ export function UsersManager() {
                 ✕ Close
               </button>
             </div>
+            {editingUserId && (
+              <p className="mb-3 text-xs text-gray-500">
+                Only Full Name and Mobile Number can be changed here. Use the school dropdown in the list
+                above to reassign a school, and remind the headteacher they can update their own password
+                and mobile number from their Profile page.
+              </p>
+            )}
             <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Input
                 label="Full Name"
@@ -318,44 +393,51 @@ export function UsersManager() {
                 onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))}
                 error={errors.full_name}
               />
-              <Input
-                label="Email"
-                type="email"
-                value={form.email}
-                onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                error={errors.email}
-              />
+              {!editingUserId && (
+                <Input
+                  label="Email"
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                  error={errors.email}
+                />
+              )}
               <Input
                 label="Mobile Number"
                 value={form.mobile_number}
                 onChange={(e) => setForm((f) => ({ ...f, mobile_number: e.target.value }))}
                 error={errors.mobile_number}
+                placeholder="03001234567"
               />
-              <Input
-                label="Temporary Password"
-                type="text"
-                value={form.password}
-                onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-                error={errors.password}
-                hint="Share this securely with the headteacher; they can change it later."
-              />
-              <Select
-                label="Assign School"
-                value={form.school_id}
-                onChange={(e) => setForm((f) => ({ ...f, school_id: e.target.value }))}
-                error={errors.school_id}
-              >
-                <option value="">Select a school</option>
-                {availableSchools.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.school_name} - {s.emis_code}
-                  </option>
-                ))}
-              </Select>
+              {!editingUserId && (
+                <>
+                  <Input
+                    label="Temporary Password"
+                    type="text"
+                    value={form.password}
+                    onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                    error={errors.password}
+                    hint="Share this securely with the headteacher; they can change it later."
+                  />
+                  <Select
+                    label="Assign School"
+                    value={form.school_id}
+                    onChange={(e) => setForm((f) => ({ ...f, school_id: e.target.value }))}
+                    error={errors.school_id}
+                  >
+                    <option value="">Select a school</option>
+                    {availableSchools.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.school_name} - {s.emis_code}
+                      </option>
+                    ))}
+                  </Select>
+                </>
+              )}
 
               <div className="flex gap-3 sm:col-span-2">
                 <Button type="submit" loading={saving}>
-                  Add Headteacher
+                  {editingUserId ? "Save Changes" : "Add Headteacher"}
                 </Button>
                 <Button type="button" variant="outline" onClick={handleCancelForm}>
                   Cancel

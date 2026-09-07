@@ -10,7 +10,7 @@ import { SchoolsManager } from "./SchoolsManager";
 export default function AdminSchoolsPage() {
   return (
     <main className="flex min-h-dvh flex-col bg-brand-50">
-      <Header title="SDEO Kulachi Admin" subtitle="School Management" homeHref="/admin" />
+      <Header title="SDEO Kulachi Admin" subtitle="School Management" homeHref="/admin" showProfileLink />
       <AdminNav />
       <div className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">
         <SchoolsManager />

@@ -16,7 +16,7 @@ import { OverviewClient } from "./OverviewClient";
 export default function AdminOverviewPage() {
   return (
     <main className="flex min-h-dvh flex-col bg-brand-50">
-      <Header title="SDEO Kulachi Admin" subtitle="SDEO Office Dashboard" homeHref="/admin" />
+      <Header title="SDEO Kulachi Admin" subtitle="SDEO Office Dashboard" homeHref="/admin" showProfileLink />
       <AdminNav />
 
       <div className="mx-auto w-full max-w-5xl px-4 pt-6">

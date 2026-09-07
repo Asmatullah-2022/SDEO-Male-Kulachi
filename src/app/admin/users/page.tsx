@@ -11,7 +11,7 @@ import { UsersManager } from "./UsersManager";
 export default function AdminUsersPage() {
   return (
     <main className="flex min-h-dvh flex-col bg-brand-50">
-      <Header title="SDEO Kulachi Admin" subtitle="User Management" homeHref="/admin" />
+      <Header title="SDEO Kulachi Admin" subtitle="User Management" homeHref="/admin" showProfileLink />
       <AdminNav />
       <div className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">
         <UsersManager />

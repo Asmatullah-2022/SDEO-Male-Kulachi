@@ -12,7 +12,7 @@ export default function AdminReportsPage() {
   return (
     <main className="flex min-h-dvh flex-col bg-brand-50 print:bg-white">
       <div className="print:hidden">
-        <Header title="SDEO Kulachi Admin" subtitle="Reports & Analytics" homeHref="/admin" />
+        <Header title="SDEO Kulachi Admin" subtitle="Reports & Analytics" homeHref="/admin" showProfileLink />
         <AdminNav />
       </div>
       <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
