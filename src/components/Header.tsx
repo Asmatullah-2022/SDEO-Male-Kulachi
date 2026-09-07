@@ -7,7 +7,8 @@ interface HeaderProps {
   homeHref?: string;
   showSignOut?: boolean;
   /** Admin pages have no bottom nav (headteacher pages already get a
-   * Profile tab there), so this adds a small link to /profile here instead. */
+   * Profile tab there), so this adds a small link to /admin/profile here
+   * instead — a dedicated route, separate from the headteacher /profile. */
   showProfileLink?: boolean;
 }
 
@@ -33,7 +34,7 @@ export function Header({
         <div className="flex items-center gap-1">
           {showProfileLink && (
             <Link
-              href="/profile"
+              href="/admin/profile"
               className="rounded-lg px-3 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50"
             >
               👤 Profile
