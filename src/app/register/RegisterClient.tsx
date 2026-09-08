@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import { registrationSchema } from "@/lib/validation";
 import { Button } from "@/components/Button";
 import { Input } from "@/components/Input";
+import { PasswordInput } from "@/components/PasswordInput";
 import { Select } from "@/components/Select";
 import { Alert } from "@/components/Alert";
 
@@ -195,7 +196,7 @@ export function RegisterClient() {
           />
           <Input
             label="Mobile Number"
-            placeholder="03001234567"
+            placeholder="Enter mobile number"
             value={form.mobile_number}
             onChange={(e) => setForm((f) => ({ ...f, mobile_number: e.target.value }))}
             error={errors.mobile_number}
@@ -217,17 +218,15 @@ export function RegisterClient() {
             ))}
           </Select>
           <Input label="EMIS Code" value={selectedSchool?.emis_code ?? ""} disabled readOnly hint="Auto-filled from the selected school" />
-          <Input
+          <PasswordInput
             label="Password"
-            type="password"
             autoComplete="new-password"
             value={form.password}
             onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
             error={errors.password}
           />
-          <Input
+          <PasswordInput
             label="Confirm Password"
-            type="password"
             autoComplete="new-password"
             value={form.confirm_password}
             onChange={(e) => setForm((f) => ({ ...f, confirm_password: e.target.value }))}
