@@ -288,17 +288,33 @@ end $$;
 
 -- ---------------------------------------------------------------------
 -- Auto-create a profile row whenever a new auth user signs up
--- (Admin normally creates headteacher accounts via Supabase Auth Admin API
---  / dashboard, then this trigger seeds a matching profile row.)
+-- (An admin creates a headteacher account via the Admin Auth API, or a
+--  headteacher self-registers via the public /register page — both paths
+--  call supabase.auth.signUp()/createUser() which fires this trigger.)
 -- ---------------------------------------------------------------------
 create or replace function public.handle_new_user()
 returns trigger as $$
 begin
-  insert into public.profiles (id, full_name, role)
+  insert into public.profiles (id, full_name, mobile_number, school_id, role)
   values (
     new.id,
     coalesce(new.raw_user_meta_data->>'full_name', new.email),
-    coalesce((new.raw_user_meta_data->>'role')::user_role, 'headteacher')
+    new.raw_user_meta_data->>'mobile_number',
+    -- Only accepted when it's actually a well-formed UUID; anything else
+    -- (missing, malformed, tampered) silently falls back to "unassigned"
+    -- rather than raising, so a garbled value can never break sign-up.
+    case
+      when new.raw_user_meta_data->>'school_id' ~
+        '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      then (new.raw_user_meta_data->>'school_id')::uuid
+      else null
+    end,
+    -- 'role' is deliberately never read from raw_user_meta_data (a value
+    -- any caller of the public signUp API can set) — every self-registered
+    -- or admin-created account is inserted as a headteacher. The only way
+    -- to grant the admin role is a direct SQL update run by a human with
+    -- Supabase dashboard access, e.g. the seed statement below.
+    'headteacher'
   )
   on conflict (id) do nothing;
   return new;

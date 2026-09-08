@@ -48,6 +48,38 @@ export const headteacherSchema = z.object({
   school_id: z.string().uuid("Select a school"),
 });
 
+const pakistaniMobileNumber = z
+  .string()
+  .trim()
+  .min(1, "Mobile number is required")
+  .refine((value) => {
+    const digits = value.replace(/\D/g, "");
+    return /^03\d{9}$/.test(digits) || /^923\d{9}$/.test(digits);
+  }, "Enter a valid Pakistani mobile number (e.g. 03001234567)");
+
+/**
+ * Public self-registration form (see src/app/register). Role is
+ * deliberately not a field here at all — every self-registered account is
+ * a headteacher; that is enforced again, independently, by the
+ * handle_new_user trigger which never reads role from signup metadata
+ * (see supabase/schema.sql).
+ */
+export const registrationSchema = z
+  .object({
+    full_name: z.string().trim().min(2, "Full name is required"),
+    email: z.string().trim().email("Enter a valid email address"),
+    mobile_number: pakistaniMobileNumber,
+    school_id: z.string().uuid("Select your school"),
+    password: z.string().min(6, "Password must be at least 6 characters"),
+    confirm_password: z.string().min(1, "Please confirm your password"),
+  })
+  .refine((data) => data.password === data.confirm_password, {
+    message: "Passwords do not match",
+    path: ["confirm_password"],
+  });
+
+export type RegistrationInput = z.infer<typeof registrationSchema>;
+
 /**
  * Full Name + Mobile Number only — the fields a headteacher may edit on
  * their own profile, and the fields an admin may edit on a headteacher's

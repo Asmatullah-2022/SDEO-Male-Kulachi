@@ -38,6 +38,11 @@ export default function LandingPage() {
           <Link href="/login" className="w-full">
             <Button fullWidth>Headteacher Login</Button>
           </Link>
+          <Link href="/register" className="w-full">
+            <Button fullWidth variant="outline">
+              Create New Account
+            </Button>
+          </Link>
         </div>
 
         <div className="mt-10 grid w-full grid-cols-1 gap-3 sm:grid-cols-2">
