@@ -21,11 +21,16 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [unconfirmedEmail, setUnconfirmedEmail] = useState<string | null>(null);
+  const [resending, setResending] = useState(false);
+  const [resendMessage, setResendMessage] = useState<string | null>(null);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     setFieldErrors({});
+    setUnconfirmedEmail(null);
+    setResendMessage(null);
 
     const result = loginSchema.safeParse({ email, password });
     if (!result.success) {
@@ -39,13 +44,44 @@ function LoginForm() {
 
     setLoading(true);
     const supabase = createClient();
+
+    // The field accepts either an email or a mobile number. Supabase Auth
+    // here is email/password only, so a non-email identifier has to be
+    // resolved to its account's email first — see
+    // /api/login/resolve-identifier. An email-shaped identifier is used
+    // as-is with no extra request.
+    let emailToUse = result.data.email;
+    if (!emailToUse.includes("@")) {
+      try {
+        const res = await fetch("/api/login/resolve-identifier", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ identifier: emailToUse }),
+        });
+        const json = await res.json();
+        if (json?.email) emailToUse = json.email;
+      } catch {
+        // Fall through and attempt sign-in with the raw value below — it
+        // will fail with the same generic invalid-credentials message.
+      }
+    }
+
     const { data, error: signInError } = await supabase.auth.signInWithPassword({
-      email: result.data.email,
+      email: emailToUse,
       password: result.data.password,
     });
 
     if (signInError) {
-      setError("Invalid email/mobile number or password. Please try again.");
+      const isUnconfirmed =
+        signInError.code === "email_not_confirmed" || /email not confirmed/i.test(signInError.message ?? "");
+      if (isUnconfirmed) {
+        setError(
+          "Your account exists but hasn't been confirmed yet. Please check your email (including spam/junk) for the confirmation link before logging in."
+        );
+        setUnconfirmedEmail(emailToUse);
+      } else {
+        setError("Invalid email/mobile number or password. Please try again.");
+      }
       setLoading(false);
       return;
     }
@@ -68,6 +104,20 @@ function LoginForm() {
     }
   }
 
+  async function handleResendConfirmation() {
+    if (!unconfirmedEmail) return;
+    setResending(true);
+    setResendMessage(null);
+    const supabase = createClient();
+    const { error: resendError } = await supabase.auth.resend({ type: "signup", email: unconfirmedEmail });
+    setResending(false);
+    setResendMessage(
+      resendError
+        ? "Could not resend the confirmation email. Please try again in a moment."
+        : "Confirmation email sent. Please check your inbox (and spam/junk folder)."
+    );
+  }
+
   return (
     <div className="flex min-h-dvh flex-col justify-center bg-brand-50 px-4 py-10">
       <div className="mx-auto w-full max-w-sm">
@@ -83,6 +133,12 @@ function LoginForm() {
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded-2xl bg-white p-6 shadow-sm">
           {error && <Alert type="error">{error}</Alert>}
+          {resendMessage && <Alert type={resendMessage.startsWith("Could not") ? "error" : "success"}>{resendMessage}</Alert>}
+          {unconfirmedEmail && (
+            <Button type="button" variant="outline" fullWidth loading={resending} onClick={handleResendConfirmation}>
+              Resend Confirmation Email
+            </Button>
+          )}
 
           <Input
             label="Email or Mobile Number"
