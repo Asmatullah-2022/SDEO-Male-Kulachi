@@ -42,65 +42,84 @@ function LoginForm() {
       return;
     }
 
-    setLoading(true);
-    const supabase = createClient();
-
     // The field accepts either an email or a mobile number. Supabase Auth
     // here is email/password only, so a non-email identifier has to be
     // resolved to its account's email first — see
     // /api/login/resolve-identifier. An email-shaped identifier is used
-    // as-is with no extra request.
+    // as-is with no extra request. Declared here (not inside the try
+    // block) so the catch block below can still reference it.
     let emailToUse = result.data.email;
-    if (!emailToUse.includes("@")) {
-      try {
-        const res = await fetch("/api/login/resolve-identifier", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ identifier: emailToUse }),
-        });
-        const json = await res.json();
-        if (json?.email) emailToUse = json.email;
-      } catch {
-        // Fall through and attempt sign-in with the raw value below — it
-        // will fail with the same generic invalid-credentials message.
+
+    setLoading(true);
+    try {
+      const supabase = createClient();
+
+      if (!emailToUse.includes("@")) {
+        try {
+          const res = await fetch("/api/login/resolve-identifier", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ identifier: emailToUse }),
+          });
+          const json = await res.json();
+          if (json?.email) emailToUse = json.email;
+        } catch (resolveErr) {
+          // Non-fatal — fall through and attempt sign-in with the raw
+          // typed value below; that fails cleanly with the same
+          // generic invalid-credentials message.
+          console.error("Login: could not resolve mobile number to an email, trying it as-is.", resolveErr);
+        }
       }
-    }
 
-    const { data, error: signInError } = await supabase.auth.signInWithPassword({
-      email: emailToUse,
-      password: result.data.password,
-    });
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email: emailToUse,
+        password: result.data.password,
+      });
 
-    if (signInError) {
-      const isUnconfirmed =
-        signInError.code === "email_not_confirmed" || /email not confirmed/i.test(signInError.message ?? "");
-      if (isUnconfirmed) {
-        setError(
-          "Your account exists but hasn't been confirmed yet. Please check your email (including spam/junk) for the confirmation link before logging in."
-        );
-        setUnconfirmedEmail(emailToUse);
-      } else {
-        setError("Invalid email/mobile number or password. Please try again.");
-      }
-      setLoading(false);
-      return;
-    }
+      if (signInError) throw signInError;
+      if (!data?.user) throw new Error("Sign-in did not return a user session.");
 
-    if (data.user) {
       // Defense in depth alongside SignOutButton's clear: guarantees a
       // fresh fetch for THIS session's user even if a previous session in
       // this tab ended some other way (expired token, closed tab without
       // signing out) and left cached profile/school/report data behind.
       clearAllCache();
 
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from("profiles")
         .select("role")
         .eq("id", data.user.id)
         .single();
 
+      if (profileError) {
+        // Non-fatal — still route the user in; role just falls back to
+        // the headteacher dashboard below rather than getting stuck here.
+        console.error("Login: signed in, but could not load the profile role.", profileError);
+      }
+
       router.replace(redirectedFrom || (profile?.role === "admin" ? "/admin" : "/dashboard"));
       router.refresh();
+    } catch (err) {
+      const authErr = err as { code?: string; message?: string; name?: string };
+      console.error("Login failed:", err);
+
+      const isUnconfirmed =
+        authErr?.code === "email_not_confirmed" || /email not confirmed/i.test(authErr?.message ?? "");
+      const looksLikeNetworkFailure =
+        authErr?.name === "TypeError" || /failed to fetch|network|fetch/i.test(authErr?.message ?? "");
+
+      if (isUnconfirmed) {
+        setError(
+          "Your account exists but hasn't been confirmed yet. Please check your email (including spam/junk) for the confirmation link before logging in."
+        );
+        setUnconfirmedEmail(emailToUse);
+      } else if (looksLikeNetworkFailure) {
+        setError("Could not reach the server. Please check your internet connection and try again.");
+      } else {
+        setError("Invalid email/mobile number or password. Please try again.");
+      }
+    } finally {
+      setLoading(false);
     }
   }
 
