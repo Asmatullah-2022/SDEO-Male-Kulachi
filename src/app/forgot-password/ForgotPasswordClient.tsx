@@ -43,8 +43,11 @@ export function ForgotPasswordClient() {
       // Logged unconditionally (not just on error) so it's possible to
       // confirm from the browser console that the request actually left
       // the browser and reached Supabase, before worrying about whether
-      // an email arrives — the two are independent failure points.
-      console.log("Forgot password: calling resetPasswordForEmail", { email: result.data.email, redirectTo });
+      // an email arrives — those are two independent failure points, and
+      // this is the only one this app's own code can verify or fix.
+      console.log("Forgot password: entered email:", result.data.email);
+      console.log("Forgot password: window.location.origin:", window.location.origin);
+      console.log("Forgot password: redirectTo sent to Supabase:", redirectTo);
 
       const { data, error: resetError } = await supabase.auth.resetPasswordForEmail(result.data.email, {
         // Matches wherever this app is actually running (production,
@@ -53,12 +56,15 @@ export function ForgotPasswordClient() {
         redirectTo,
       });
 
+      console.log("Password Reset Data:", data);
+      console.error("Password Reset Error:", resetError);
+
       if (resetError) throw resetError;
-      console.log("Forgot password: Supabase accepted the request with no error.", data);
       setSent(true);
     } catch (err) {
       const authErr = err as { status?: number; code?: string; message?: string; name?: string };
-      console.error("Forgot password request failed — Supabase rejected the request:", err);
+      console.error("Forgot password request failed — Supabase rejected the request.");
+      console.error("Error code:", authErr?.code, "| status:", authErr?.status, "| message:", authErr?.message);
 
       const message = authErr?.message ?? "";
       const isInvalidEmail = /invalid email|unable to validate email/i.test(message);
