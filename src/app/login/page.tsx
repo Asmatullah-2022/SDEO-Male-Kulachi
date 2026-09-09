@@ -48,8 +48,10 @@ function LoginForm() {
     // /api/login/resolve-identifier. An email-shaped identifier is used
     // as-is with no extra request. Declared here (not inside the try
     // block) so the catch block below can still reference it.
-    let emailToUse = result.data.email;
+    let emailToUse = result.data.email.trim();
+    if (emailToUse.includes("@")) emailToUse = emailToUse.toLowerCase();
 
+    if (loading) return; // guards against a double-tap/double-submit firing two sign-ins at once
     setLoading(true);
     try {
       const supabase = createClient();
@@ -89,7 +91,7 @@ function LoginForm() {
         .from("profiles")
         .select("role")
         .eq("id", data.user.id)
-        .single();
+        .maybeSingle();
 
       if (profileError) {
         // Non-fatal — still route the user in; role just falls back to
@@ -103,8 +105,13 @@ function LoginForm() {
       const authErr = err as { code?: string; message?: string; name?: string };
       console.error("Login failed:", err);
 
+      const authErrWithStatus = authErr as { status?: number };
       const isUnconfirmed =
         authErr?.code === "email_not_confirmed" || /email not confirmed/i.test(authErr?.message ?? "");
+      const isRateLimited =
+        authErrWithStatus?.status === 429 ||
+        authErr?.code === "over_request_rate_limit" ||
+        /rate limit|too many requests/i.test(authErr?.message ?? "");
       const looksLikeNetworkFailure =
         authErr?.name === "TypeError" || /failed to fetch|network|fetch/i.test(authErr?.message ?? "");
 
@@ -113,6 +120,8 @@ function LoginForm() {
           "Your account exists but hasn't been confirmed yet. Please check your email (including spam/junk) for the confirmation link before logging in."
         );
         setUnconfirmedEmail(emailToUse);
+      } else if (isRateLimited) {
+        setError("Too many login attempts. Please wait a few minutes and try again.");
       } else if (looksLikeNetworkFailure) {
         setError("Could not reach the server. Please check your internet connection and try again.");
       } else {

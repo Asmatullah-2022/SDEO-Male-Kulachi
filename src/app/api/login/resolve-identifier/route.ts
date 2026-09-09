@@ -46,12 +46,17 @@ export async function POST(request: NextRequest) {
     const { data: profiles, error } = await admin.from("profiles").select("id, mobile_number");
     if (error) throw error;
 
-    const match = (profiles ?? []).find(
+    const matches = (profiles ?? []).filter(
       (p) => p.mobile_number && normalizeDigits(p.mobile_number) === normalized
     );
-    if (!match) return NextResponse.json({ email: null });
+    // If more than one profile normalizes to the same number (a duplicate
+    // data-entry mistake), refuse to guess which one — resolving to the
+    // wrong account would make a genuinely correct password fail against
+    // someone else's email. Safer to fall through to the raw identifier,
+    // which fails cleanly with the same generic message either way.
+    if (matches.length !== 1) return NextResponse.json({ email: null });
 
-    const { data: userData, error: userError } = await admin.auth.admin.getUserById(match.id);
+    const { data: userData, error: userError } = await admin.auth.admin.getUserById(matches[0].id);
     if (userError || !userData?.user?.email) return NextResponse.json({ email: null });
 
     return NextResponse.json({ email: userData.user.email });
