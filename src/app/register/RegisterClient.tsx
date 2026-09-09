@@ -84,6 +84,8 @@ export function RegisterClient() {
     e.preventDefault();
     setError(null);
 
+    if (submitting) return; // blocks a double-tap/double-submit from firing two signUp calls at once
+
     const result = registrationSchema.safeParse(form);
     if (!result.success) {
       const errs: Record<string, string> = {};
@@ -96,65 +98,82 @@ export function RegisterClient() {
     setErrors({});
     setSubmitting(true);
 
-    const supabase = createClient();
-    const { data, error: signUpError } = await supabase.auth.signUp({
-      email: result.data.email,
-      password: result.data.password,
-      options: {
-        // Explicit, so the confirmation email always points at wherever
-        // this app is actually running (production, a preview deploy, or
-        // localhost during development) rather than depending solely on
-        // the Supabase project's "Site URL" dashboard default.
-        emailRedirectTo: `${window.location.origin}/login`,
-        data: {
-          full_name: result.data.full_name,
-          mobile_number: result.data.mobile_number,
-          school_id: result.data.school_id,
+    try {
+      const supabase = createClient();
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email: result.data.email,
+        password: result.data.password,
+        options: {
+          // Explicit, so the confirmation email always points at wherever
+          // this app is actually running (production, a preview deploy, or
+          // localhost during development) rather than depending solely on
+          // the Supabase project's "Site URL" dashboard default.
+          emailRedirectTo: `${window.location.origin}/login`,
+          data: {
+            full_name: result.data.full_name,
+            mobile_number: result.data.mobile_number,
+            school_id: result.data.school_id,
+          },
         },
-      },
-    });
+      });
 
-    if (signUpError) {
-      const isDuplicate = /already registered|already exists|already been registered/i.test(
-        signUpError.message ?? ""
-      );
-      const isSchoolTaken = /duplicate key|unique constraint/i.test(signUpError.message ?? "");
+      if (signUpError) throw signUpError;
+
+      // Supabase's anti-enumeration behavior: signing up with an email that
+      // already exists can return a fake "success" with no error, but the
+      // returned user has no identities attached.
+      if (data.user && data.user.identities && data.user.identities.length === 0) {
+        setError("An account with this email address already exists. Please log in instead.");
+        return;
+      }
+
+      // Email confirmation disabled: signUp already returned an active
+      // session. Always send the user to /login afterward rather than
+      // silently keeping them signed in here, so sign this session back
+      // out first — they can log straight in since the account is already
+      // active.
+      if (data.session) {
+        await supabase.auth.signOut();
+      }
+
+      setSuccessMessage("Account created successfully! You can now log in.");
+      setTimeout(() => router.push("/login"), 2000);
+    } catch (err) {
+      const authErr = err as { code?: string; status?: number; message?: string; name?: string };
+      console.error("Registration failed:", err);
+
+      const message = authErr?.message ?? "";
+      const isDuplicate = /already registered|already exists|already been registered/i.test(message);
+      const isSchoolTaken = /duplicate key|unique constraint/i.test(message);
+      const isRateLimited =
+        authErr?.status === 429 ||
+        authErr?.code === "over_email_send_rate_limit" ||
+        /email rate limit exceeded|rate limit/i.test(message);
+      const isInvalidEmail = /invalid email|unable to validate email/i.test(message);
+      const isWeakPassword = authErr?.code === "weak_password" || /password.*(weak|should be|at least)/i.test(message);
+      const looksLikeNetworkFailure = authErr?.name === "TypeError" || /failed to fetch|network/i.test(message);
+
+      if (isDuplicate) {
+        setError("An account with this email address already exists. Please log in instead.");
+      } else if (isSchoolTaken) {
+        setError(
+          "This school already has a headteacher account assigned. Please refresh and choose a different school, or contact the SDEO office."
+        );
+      } else if (isRateLimited) {
+        setError("Too many signup emails were requested recently. Please wait a few minutes and try again.");
+      } else if (isInvalidEmail) {
+        setError("Please enter a valid email address.");
+      } else if (isWeakPassword) {
+        setError("Please choose a stronger password (at least 6 characters).");
+      } else if (looksLikeNetworkFailure) {
+        setError("Could not reach the server. Please check your internet connection and try again.");
+      } else {
+        // Never show a raw Supabase/technical error to a teacher.
+        setError("Could not create your account. Please try again in a moment.");
+      }
+    } finally {
       setSubmitting(false);
-      setError(
-        isDuplicate
-          ? "An account with this email address already exists. Please log in instead."
-          : isSchoolTaken
-            ? "This school already has a headteacher account assigned. Please refresh and choose a different school, or contact the SDEO office."
-            : signUpError.message || "Could not create your account. Please try again."
-      );
-      return;
     }
-
-    // Supabase's anti-enumeration behavior: signing up with an email that
-    // already exists can return a fake "success" with no error, but the
-    // returned user has no identities attached.
-    if (data.user && data.user.identities && data.user.identities.length === 0) {
-      setSubmitting(false);
-      setError("An account with this email address already exists. Please log in instead.");
-      return;
-    }
-
-    // Email confirmation disabled: signUp already returned an active
-    // session. TASK 7 always sends the user to /login afterward rather
-    // than silently keeping them signed in here, so sign this session back
-    // out first — they can log straight in since the account is already
-    // active.
-    if (data.session) {
-      await supabase.auth.signOut();
-    }
-
-    setSubmitting(false);
-    setSuccessMessage(
-      data.session
-        ? "Account created successfully! Redirecting you to the login page..."
-        : "Account created successfully. Please check your email to confirm your account before logging in."
-    );
-    setTimeout(() => router.push("/login"), 2500);
   }
 
   if (successMessage) {
@@ -238,8 +257,8 @@ export function RegisterClient() {
             error={errors.confirm_password}
           />
 
-          <Button type="submit" fullWidth loading={submitting}>
-            Create Account
+          <Button type="submit" fullWidth loading={submitting} disabled={submitting}>
+            {submitting ? "Creating Account..." : "Create Account"}
           </Button>
         </form>
 
