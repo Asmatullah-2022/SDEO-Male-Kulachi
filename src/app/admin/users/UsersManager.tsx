@@ -5,8 +5,9 @@ import { createClient } from "@/lib/supabase/client";
 import { headteacherSchema, profileEditSchema } from "@/lib/validation";
 import { getSchools } from "@/lib/services/schools";
 import { updateProfileNameAndMobile } from "@/lib/services/users";
+import { getPendingSchoolChangeRequests, resolveSchoolChangeRequest } from "@/lib/services/schoolChangeRequests";
 import { useAdminCache } from "@/lib/adminCache";
-import type { HeadteacherUser, School } from "@/lib/types";
+import type { HeadteacherUser, School, SchoolChangeRequest } from "@/lib/types";
 import { Card } from "@/components/Card";
 import { Input } from "@/components/Input";
 import { Select } from "@/components/Select";
@@ -33,6 +34,9 @@ async function fetchHeadteachers(): Promise<HeadteacherUser[]> {
 export function UsersManager() {
   const usersCache = useAdminCache<HeadteacherUser[]>("adminUsers", fetchHeadteachers);
   const schoolsCache = useAdminCache<School[]>("schools", () => getSchools(createClient()));
+  const requestsCache = useAdminCache<SchoolChangeRequest[]>("schoolChangeRequests", () =>
+    getPendingSchoolChangeRequests(createClient())
+  );
   const users = usersCache.data ?? [];
   const schools = schoolsCache.data ?? [];
   const [form, setForm] = useState(emptyForm);
@@ -44,6 +48,7 @@ export function UsersManager() {
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [reassigning, setReassigning] = useState<string | null>(null);
+  const [resolvingRequestId, setResolvingRequestId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
   const schoolById = new Map(schools.map((s) => [s.id, s]));
@@ -229,12 +234,120 @@ export function UsersManager() {
     usersCache.mutate((prev) => (prev ?? []).map((u) => (u.id === userId ? { ...u, ...data } : u)));
   }
 
+  /**
+   * Approving reassigns the school directly (same authenticated-admin
+   * update path as the reassign dropdown above) and then marks the
+   * request resolved. If the target school picked up another headteacher
+   * in the meantime, the profiles update fails on the existing
+   * profiles_school_id_headteacher_unique constraint — caught below, and
+   * the request is left pending rather than silently marked resolved.
+   */
+  async function handleApproveRequest(req: SchoolChangeRequest) {
+    if (!req.requested_school_id) return;
+    setResolvingRequestId(req.id);
+    setError(null);
+    setSuccess(null);
+    try {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not signed in.");
+
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update({ school_id: req.requested_school_id })
+        .eq("id", req.headteacher_id);
+      if (updateError) throw updateError;
+
+      await resolveSchoolChangeRequest(supabase, req.id, { status: "approved", resolved_by: user.id });
+
+      requestsCache.mutate((prev) => (prev ?? []).filter((r) => r.id !== req.id));
+      usersCache.mutate((prev) =>
+        (prev ?? []).map((u) => (u.id === req.headteacher_id ? { ...u, school_id: req.requested_school_id } : u))
+      );
+      setSuccess("School change approved and reassigned.");
+    } catch {
+      setError(
+        "Could not approve this request — the school may already be assigned to another Headteacher. Please review and reassign manually if needed."
+      );
+    } finally {
+      setResolvingRequestId(null);
+    }
+  }
+
+  async function handleRejectRequest(req: SchoolChangeRequest) {
+    setResolvingRequestId(req.id);
+    setError(null);
+    setSuccess(null);
+    try {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not signed in.");
+
+      await resolveSchoolChangeRequest(supabase, req.id, { status: "rejected", resolved_by: user.id });
+      requestsCache.mutate((prev) => (prev ?? []).filter((r) => r.id !== req.id));
+      setSuccess("School change request rejected.");
+    } catch {
+      setError("Could not reject this request. Please try again.");
+    } finally {
+      setResolvingRequestId(null);
+    }
+  }
+
   return (
     <div className="space-y-6">
       {(error || usersCache.error || schoolsCache.error) && (
         <Alert type="error">{error ?? usersCache.error ?? schoolsCache.error}</Alert>
       )}
       {success && <Alert type="success">{success}</Alert>}
+
+      {/* Pending School Change Requests — surfaced above the user list since
+          these need admin action. Hidden entirely when there are none. */}
+      {(requestsCache.data?.length ?? 0) > 0 && (
+        <Card>
+          <p className="mb-3 text-sm font-bold text-brand-900">📋 Pending School Change Requests</p>
+          <div className="space-y-3">
+            {requestsCache.data!.map((req) => {
+              const headteacher = users.find((u) => u.id === req.headteacher_id);
+              const currentSchool = req.current_school_id ? schoolById.get(req.current_school_id) : null;
+              const requestedSchool = req.requested_school_id ? schoolById.get(req.requested_school_id) : null;
+              const resolving = resolvingRequestId === req.id;
+              return (
+                <div key={req.id} className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                  <p className="text-sm font-semibold text-brand-900">{headteacher?.full_name ?? "Unknown Headteacher"}</p>
+                  <p className="text-xs text-gray-600">
+                    From: {currentSchool?.school_name ?? "Not assigned"} → To: {requestedSchool?.school_name ?? "Unknown"}{" "}
+                    {requestedSchool && `(EMIS: ${requestedSchool.emis_code})`}
+                  </p>
+                  {req.reason && <p className="mt-1 text-xs italic text-gray-500">&ldquo;{req.reason}&rdquo;</p>}
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      loading={resolving}
+                      onClick={() => handleApproveRequest(req)}
+                      className="min-h-[44px] px-3 py-2 text-xs"
+                    >
+                      ✅ Approve
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      loading={resolving}
+                      onClick={() => handleRejectRequest(req)}
+                      className="min-h-[44px] px-3 py-2 text-xs"
+                    >
+                      ✕ Reject
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
 
       {/* Search + stats — shown first so admins can find an existing user before adding a new one */}
       <Card>

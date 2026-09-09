@@ -327,6 +327,70 @@ create trigger on_auth_user_created
   for each row execute function public.handle_new_user();
 
 -- ---------------------------------------------------------------------
+-- TABLE: school_change_requests
+-- A headteacher may self-assign their FIRST school (handled entirely in
+-- application code via the service-role client — see
+-- src/app/api/profile/select-school — specifically because
+-- profiles_restrict_self_update above blocks a non-admin from ever
+-- changing their own school_id, first time or not). Changing schools
+-- *after* that requires SDEO/Admin approval: a headteacher may only
+-- create a pending request here; only an admin can act on it (see the
+-- RLS policies below), and approving it still goes through the existing
+-- admin-only profiles_admin_update path, not this table.
+-- ---------------------------------------------------------------------
+create table if not exists public.school_change_requests (
+  id                  uuid primary key default gen_random_uuid(),
+  headteacher_id      uuid not null references public.profiles(id) on delete cascade,
+  current_school_id   uuid references public.schools(id) on delete set null,
+  requested_school_id uuid references public.schools(id) on delete set null,
+  reason              text,
+  status              text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  created_at          timestamptz not null default now(),
+  resolved_at         timestamptz,
+  resolved_by         uuid references public.profiles(id)
+);
+
+comment on table public.school_change_requests is 'A headteacher''s request to move to a different school, pending SDEO/Admin review';
+
+-- Only one open request per headteacher at a time.
+create unique index if not exists school_change_requests_one_pending_per_headteacher
+  on public.school_change_requests (headteacher_id)
+  where status = 'pending';
+
+alter table public.school_change_requests enable row level security;
+
+drop policy if exists "school_change_requests_select_own_or_admin" on public.school_change_requests;
+create policy "school_change_requests_select_own_or_admin"
+  on public.school_change_requests for select
+  to authenticated
+  using (headteacher_id = auth.uid() or public.is_admin());
+
+-- A headteacher may only ever create a request for themselves — never on
+-- another user's behalf, and never pre-approved/pre-resolved (status
+-- defaults to 'pending' and this policy doesn't let them set it to
+-- anything else since it only checks headteacher_id).
+drop policy if exists "school_change_requests_insert_own" on public.school_change_requests;
+create policy "school_change_requests_insert_own"
+  on public.school_change_requests for insert
+  to authenticated
+  with check (headteacher_id = auth.uid());
+
+-- Only an admin may update a request (approve/reject) — a headteacher can
+-- never resolve their own request or edit another user's.
+drop policy if exists "school_change_requests_admin_update" on public.school_change_requests;
+create policy "school_change_requests_admin_update"
+  on public.school_change_requests for update
+  to authenticated
+  using (public.is_admin())
+  with check (public.is_admin());
+
+drop policy if exists "school_change_requests_admin_delete" on public.school_change_requests;
+create policy "school_change_requests_admin_delete"
+  on public.school_change_requests for delete
+  to authenticated
+  using (public.is_admin());
+
+-- ---------------------------------------------------------------------
 -- Seed: first admin (optional — edit email after creating the auth user)
 -- ---------------------------------------------------------------------
 -- update public.profiles set role = 'admin', school_id = null

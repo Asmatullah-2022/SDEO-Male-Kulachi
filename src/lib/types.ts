@@ -46,6 +46,20 @@ export interface DailyEnrollment {
   updated_at: string;
 }
 
+export type SchoolChangeRequestStatus = "pending" | "approved" | "rejected";
+
+export interface SchoolChangeRequest {
+  id: string;
+  headteacher_id: string;
+  current_school_id: string | null;
+  requested_school_id: string | null;
+  reason: string | null;
+  status: SchoolChangeRequestStatus;
+  created_at: string;
+  resolved_at: string | null;
+  resolved_by: string | null;
+}
+
 export interface EnrollmentFormValues {
   dropout: number;
   public_admission: number;
