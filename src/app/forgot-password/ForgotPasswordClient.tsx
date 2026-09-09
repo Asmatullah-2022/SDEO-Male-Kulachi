@@ -39,25 +39,38 @@ export function ForgotPasswordClient() {
     setSubmitting(true);
     try {
       const supabase = createClient();
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(result.data.email, {
+      const redirectTo = `${window.location.origin}/reset-password`;
+      // Logged unconditionally (not just on error) so it's possible to
+      // confirm from the browser console that the request actually left
+      // the browser and reached Supabase, before worrying about whether
+      // an email arrives — the two are independent failure points.
+      console.log("Forgot password: calling resetPasswordForEmail", { email: result.data.email, redirectTo });
+
+      const { data, error: resetError } = await supabase.auth.resetPasswordForEmail(result.data.email, {
         // Matches wherever this app is actually running (production,
         // preview, or local dev) rather than a hardcoded domain — same
         // pattern already used for the registration confirmation email.
-        redirectTo: `${window.location.origin}/reset-password`,
+        redirectTo,
       });
 
       if (resetError) throw resetError;
+      console.log("Forgot password: Supabase accepted the request with no error.", data);
       setSent(true);
     } catch (err) {
       const authErr = err as { status?: number; code?: string; message?: string; name?: string };
-      console.error("Forgot password request failed:", err);
+      console.error("Forgot password request failed — Supabase rejected the request:", err);
 
       const message = authErr?.message ?? "";
+      const isInvalidEmail = /invalid email|unable to validate email/i.test(message);
       const isRateLimited =
-        authErr?.status === 429 || authErr?.code === "over_email_send_rate_limit" || /rate limit/i.test(message);
+        authErr?.status === 429 ||
+        authErr?.code === "over_email_send_rate_limit" ||
+        /rate limit|too many requests/i.test(message);
       const looksLikeNetworkFailure = authErr?.name === "TypeError" || /failed to fetch|network/i.test(message);
 
-      if (isRateLimited) {
+      if (isInvalidEmail) {
+        setError("Please enter a valid email address.");
+      } else if (isRateLimited) {
         setError("Too many requests. Please wait a few minutes before trying again.");
       } else if (looksLikeNetworkFailure) {
         setError("Unable to send reset link. Please check your internet connection and try again.");
@@ -86,7 +99,8 @@ export function ForgotPasswordClient() {
         <div className="rounded-2xl bg-white p-6 shadow-sm">
           {sent ? (
             <Alert type="success">
-              Password reset link has been sent to your email. Please check your inbox.
+              If this email address is registered, a password reset link has been sent. Please check your Inbox and
+              Spam folder.
             </Alert>
           ) : (
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
