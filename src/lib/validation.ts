@@ -113,3 +113,35 @@ export const changePasswordSchema = z
   });
 
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+
+export const forgotPasswordSchema = z.object({
+  email: z.string().trim().email("Please enter a valid email address."),
+});
+
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+
+const STRONG_PASSWORD_MESSAGE = "Password must contain at least 8 characters, including uppercase, lowercase, and a number.";
+
+/**
+ * Used only on the Reset Password page (the one a teacher reaches via
+ * the emailed recovery link). Deliberately stricter than
+ * changePasswordSchema's 6-character minimum — this is a new,
+ * independent schema so the existing "Change Password" flow on the
+ * Profile page keeps its current, unchanged requirement.
+ */
+export const resetPasswordSchema = z
+  .object({
+    new_password: z
+      .string()
+      .min(8, STRONG_PASSWORD_MESSAGE)
+      .regex(/[A-Z]/, STRONG_PASSWORD_MESSAGE)
+      .regex(/[a-z]/, STRONG_PASSWORD_MESSAGE)
+      .regex(/[0-9]/, STRONG_PASSWORD_MESSAGE),
+    confirm_password: z.string().min(1, "Please confirm your new password"),
+  })
+  .refine((data) => data.new_password === data.confirm_password, {
+    message: "Passwords do not match.",
+    path: ["confirm_password"],
+  });
+
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;

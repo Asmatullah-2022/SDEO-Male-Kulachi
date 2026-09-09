@@ -189,6 +189,12 @@ function LoginForm() {
             error={fieldErrors.password}
           />
 
+          <p className="-mt-2 text-right text-xs">
+            <Link href="/forgot-password" className="font-semibold text-brand-700">
+              Forgot Password?
+            </Link>
+          </p>
+
           <Button type="submit" fullWidth loading={loading}>
             Login
           </Button>
