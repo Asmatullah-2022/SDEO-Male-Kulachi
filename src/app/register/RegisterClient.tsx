@@ -101,6 +101,11 @@ export function RegisterClient() {
       email: result.data.email,
       password: result.data.password,
       options: {
+        // Explicit, so the confirmation email always points at wherever
+        // this app is actually running (production, a preview deploy, or
+        // localhost during development) rather than depending solely on
+        // the Supabase project's "Site URL" dashboard default.
+        emailRedirectTo: `${window.location.origin}/login`,
         data: {
           full_name: result.data.full_name,
           mobile_number: result.data.mobile_number,
