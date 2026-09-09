@@ -99,6 +99,24 @@ export function RegisterClient() {
     setSubmitting(true);
 
     try {
+      // Best-effort duplicate-mobile check (see /api/register/check-mobile) —
+      // fails open on its own errors so a hiccup here never blocks a
+      // legitimate registration; only an actual match stops submission.
+      try {
+        const mobileCheckRes = await fetch("/api/register/check-mobile", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mobile_number: result.data.mobile_number }),
+        });
+        const mobileCheckJson = await mobileCheckRes.json();
+        if (mobileCheckJson?.exists) {
+          setError("This mobile number is already registered. Please use another number.");
+          return;
+        }
+      } catch (checkErr) {
+        console.error("Registration: mobile duplicate check failed, proceeding anyway.", checkErr);
+      }
+
       const supabase = createClient();
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: result.data.email,
@@ -123,7 +141,7 @@ export function RegisterClient() {
       // already exists can return a fake "success" with no error, but the
       // returned user has no identities attached.
       if (data.user && data.user.identities && data.user.identities.length === 0) {
-        setError("An account with this email address already exists. Please log in instead.");
+        setError("This email is already registered. Please log in instead.");
         return;
       }
 
@@ -154,13 +172,13 @@ export function RegisterClient() {
       const looksLikeNetworkFailure = authErr?.name === "TypeError" || /failed to fetch|network/i.test(message);
 
       if (isDuplicate) {
-        setError("An account with this email address already exists. Please log in instead.");
+        setError("This email is already registered. Please log in instead.");
       } else if (isSchoolTaken) {
         setError(
           "This school already has a headteacher account assigned. Please refresh and choose a different school, or contact the SDEO office."
         );
       } else if (isRateLimited) {
-        setError("Too many signup emails were requested recently. Please wait a few minutes and try again.");
+        setError("Too many email requests were made. Please wait a few minutes before trying again.");
       } else if (isInvalidEmail) {
         setError("Please enter a valid email address.");
       } else if (isWeakPassword) {
